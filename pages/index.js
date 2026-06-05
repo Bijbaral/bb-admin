@@ -19,6 +19,7 @@ const STATUS_COLORS = {
 const fmt = n => "₹" + Number(n).toLocaleString("en-IN");
 const WEEKLY_DATA = [65,82,74,91,88,110,95];
 const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+const MAX_IMAGES = 5;
 
 export default function AdminApp() {
   const [session, setSession] = useState(null);
@@ -100,7 +101,6 @@ function LoginPage() {
             {busy ? "Signing in…" : "Sign In →"}
           </button>
         </form>
-        <div style={{ fontSize:11, color:"#444", marginTop:20, textAlign:"center" }}>Need an account? Create one in your Supabase dashboard.</div>
       </div>
     </div>
   );
@@ -115,10 +115,9 @@ function AdminDashboard({ onLogout }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [addSuccess, setAddSuccess] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name:"", type:"T-Shirts", gender:"MEN", size:"M", fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", image:"", stock:0 });
+  const [newProduct, setNewProduct] = useState({ name:"", type:"T-Shirts", gender:"MEN", size:"M", fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", images:[], stock:0 });
   const [newOrder, setNewOrder] = useState({ customer:"", product:"", gender:"MEN", qty:1, amount:"", status:"Pending" });
 
-  // Live load + realtime sync
   useEffect(() => {
     async function load() {
       const { data: prods } = await supabase.from("products").select("*").order("created_at", { ascending: false });
@@ -140,24 +139,28 @@ function AdminDashboard({ onLogout }) {
   async function handleAddProduct(e) {
     e.preventDefault();
     if (!newProduct.name||!newProduct.mrp||!newProduct.price) return;
-    const imgs = newProduct.image ? [newProduct.image] : [];
+    const imgs = newProduct.images.length ? newProduct.images : ["https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=600&q=80"];
     const { error } = await supabase.from("products").insert([{
       name:newProduct.name, type:newProduct.type, gender:newProduct.gender, size:newProduct.size, fit:newProduct.fit,
       mrp:+newProduct.mrp, price:+newProduct.price, tag:newProduct.tag,
-      image:newProduct.image||"https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=600&q=80",
-      images:imgs, stock:+newProduct.stock||0,
+      image: imgs[0],
+      images: imgs,
+      stock:+newProduct.stock||0,
     }]);
     if (error) { alert("Error: "+error.message); return; }
-    setNewProduct({ name:"", type:"T-Shirts", gender:"MEN", size:"M", fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", image:"", stock:0 });
+    setNewProduct({ name:"", type:"T-Shirts", gender:"MEN", size:"M", fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", images:[], stock:0 });
     setAddSuccess(true); setTimeout(()=>setAddSuccess(false),2500);
   }
 
   async function handleSaveEdit(e) {
     e.preventDefault();
+    const imgs = editingProduct.images?.length ? editingProduct.images : [editingProduct.image];
     const { error } = await supabase.from("products").update({
       name:editingProduct.name, type:editingProduct.type, gender:editingProduct.gender, size:editingProduct.size, fit:editingProduct.fit,
       mrp:+editingProduct.mrp, price:+editingProduct.price, tag:editingProduct.tag,
-      image:editingProduct.image, images:editingProduct.images||[editingProduct.image], stock:+editingProduct.stock||0,
+      image: imgs[0],
+      images: imgs,
+      stock:+editingProduct.stock||0,
     }).eq("id", editingProduct.id);
     if (error) { alert("Error: "+error.message); return; }
     setEditingProduct(null);
@@ -195,7 +198,6 @@ function AdminDashboard({ onLogout }) {
 
   return (
     <div style={{ background:"#080808", minHeight:"100vh", color:"#fff", fontFamily:"'DM Sans',sans-serif" }}>
-      {/* Top nav */}
       <nav style={{ position:"fixed", top:0, left:0, right:0, zIndex:100, height:58, padding:"0 20px", display:"flex", alignItems:"center", justifyContent:"space-between", background:"rgba(6,6,6,0.9)", backdropFilter:"blur(22px)", borderBottom:"1px solid rgba(255,255,255,0.07)" }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:34, height:34, background:"linear-gradient(135deg,#a06aff,#ff3c64)", borderRadius:10, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", lineHeight:1 }}>
@@ -262,7 +264,7 @@ function AdminDashboard({ onLogout }) {
           <div className="fu" style={{ maxWidth:580 }}>
             <div style={{ fontFamily:"Bebas Neue", fontSize:26, color:"#fff", marginBottom:22 }}>ADD PRODUCT</div>
             <div style={{ padding:26, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:19 }}>
-              <ImageInput image={newProduct.image} onSet={url=>setNewProduct(p=>({...p,image:url}))} onClear={()=>setNewProduct(p=>({...p,image:""}))} />
+              <MultiImageInput images={newProduct.images} onChange={imgs=>setNewProduct(p=>({...p,images:imgs}))} />
               <form onSubmit={handleAddProduct}>
                 <div style={{ display:"grid", gap:14 }}>
                   <div><label className="form-label">Product Name</label><input className="form-field" type="text" placeholder="e.g. Oversized Acid Wash Tee" value={newProduct.name} onChange={e=>setNewProduct(p=>({...p,name:e.target.value}))} /></div>
@@ -299,13 +301,15 @@ function AdminDashboard({ onLogout }) {
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
               {products.map(p => (
                 <div key={p.id} className="inv-row">
+                  {/* Product thumbnail */}
+                  <img src={p.image} alt={p.name} style={{ width:48, height:48, objectFit:"cover", borderRadius:8, border:"1px solid rgba(255,255,255,.1)", flexShrink:0 }} onError={e=>{e.target.style.display="none";}} />
                   <div>
                     <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{p.name}</div>
-                    <div style={{ fontSize:10, color:"#444", marginTop:2 }}>{p.type} · {p.gender} · {p.size} · {p.tag}</div>
+                    <div style={{ fontSize:10, color:"#444", marginTop:2 }}>{p.type} · {p.gender} · {p.size} · {p.tag}{p.images?.length>1 ? ` · 📸 ${p.images.length} photos` : ""}</div>
                   </div>
                   <div style={{ textAlign:"right" }}><div style={{ fontSize:15, fontWeight:600, color:"#fff" }}>{p.stock||0}</div><div style={{ fontSize:9, color:"#444" }}>stock</div></div>
                   <div style={{ textAlign:"right" }}><div style={{ fontSize:14, fontWeight:600, color:"#a06aff" }}>{fmt(p.price)}</div><div style={{ fontSize:9, color:"#444" }}>{fmt(p.mrp)} MRP</div></div>
-                  <button onClick={()=>setEditingProduct({...p})} style={{ padding:"5px 12px", background:"rgba(160,106,255,.14)", border:"1px solid rgba(160,106,255,.3)", borderRadius:8, color:"#c084fc", fontSize:11, fontWeight:600, cursor:"pointer" }}>Edit</button>
+                  <button onClick={()=>setEditingProduct({...p, images: p.images?.length ? p.images : [p.image]})} style={{ padding:"5px 12px", background:"rgba(160,106,255,.14)", border:"1px solid rgba(160,106,255,.3)", borderRadius:8, color:"#c084fc", fontSize:11, fontWeight:600, cursor:"pointer" }}>Edit</button>
                   <button onClick={()=>handleDeleteProduct(p.id)} style={{ padding:"5px 12px", background:"rgba(255,60,100,.12)", border:"1px solid rgba(255,60,100,.3)", borderRadius:8, color:"#ff3c64", fontSize:11, fontWeight:600, cursor:"pointer" }}>Delete</button>
                 </div>
               ))}
@@ -386,7 +390,7 @@ function AdminDashboard({ onLogout }) {
                 <div style={{ fontFamily:"Bebas Neue", fontSize:22, color:"#fff" }}>EDIT PRODUCT</div>
                 <button onClick={()=>setEditingProduct(null)} style={{ background:"none", border:"none", color:"#555", fontSize:20, cursor:"pointer" }}>✕</button>
               </div>
-              <ImageInput image={editingProduct.image} onSet={url=>setEditingProduct(p=>({...p,image:url}))} onClear={()=>setEditingProduct(p=>({...p,image:""}))} />
+              <MultiImageInput images={editingProduct.images || []} onChange={imgs=>setEditingProduct(p=>({...p,images:imgs}))} />
               <form onSubmit={handleSaveEdit}>
                 <div style={{ display:"grid", gap:13 }}>
                   <div><label className="form-label">Product Name</label><input className="form-field" type="text" value={editingProduct.name} onChange={e=>setEditingProduct(p=>({...p,name:e.target.value}))} /></div>
@@ -414,6 +418,105 @@ function AdminDashboard({ onLogout }) {
   );
 }
 
+/* ═══════════════ MULTI-IMAGE INPUT (NEW!) ═══════════════ */
+function MultiImageInput({ images = [], onChange }) {
+  const [urlInput, setUrlInput] = useState("");
+  const [urlError, setUrlError] = useState("");
+  const fileRef = useRef(null);
+
+  function addUrl() {
+    const v = urlInput.trim();
+    if (!v.startsWith("http")) { setUrlError("Please enter a valid https:// URL"); return; }
+    if (images.length >= MAX_IMAGES) { setUrlError(`Max ${MAX_IMAGES} images per product`); return; }
+    setUrlError(""); 
+    onChange([...images, v]); 
+    setUrlInput("");
+  }
+
+  async function handleFiles(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    if (images.length + files.length > MAX_IMAGES) {
+      alert(`Max ${MAX_IMAGES} images total. You can add ${MAX_IMAGES - images.length} more.`);
+      return;
+    }
+    const newUrls = [];
+    for (const file of files) {
+      const ext = file.name.split(".").pop();
+      const path = `${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
+      const { data, error } = await supabase.storage.from("product-images").upload(path, file);
+      if (error) { alert("Upload failed: "+error.message); continue; }
+      const { data: { publicUrl } } = supabase.storage.from("product-images").getPublicUrl(data.path);
+      newUrls.push(publicUrl);
+    }
+    onChange([...images, ...newUrls]);
+    e.target.value = "";
+  }
+
+  function removeImg(idx) {
+    onChange(images.filter((_, i) => i !== idx));
+  }
+
+  function makeMain(idx) {
+    if (idx === 0) return;
+    const reordered = [images[idx], ...images.filter((_, i) => i !== idx)];
+    onChange(reordered);
+  }
+
+  return (
+    <div style={{ marginBottom:20 }}>
+      <div className="form-label">Product Images ({images.length}/{MAX_IMAGES})</div>
+      
+      {/* Image grid */}
+      {images.length > 0 && (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(90px, 1fr))", gap:8, marginBottom:12 }}>
+          {images.map((img, idx) => (
+            <div key={idx} style={{ position:"relative", borderRadius:10, overflow:"hidden", aspectRatio:"1/1", border: idx===0 ? "2px solid #a06aff" : "1px solid rgba(255,255,255,.1)" }}>
+              <img src={img} alt={`Image ${idx+1}`} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} onError={e=>{e.target.style.background="#222";}} />
+              
+              {/* Main badge */}
+              {idx === 0 && (
+                <div style={{ position:"absolute", top:4, left:4, background:"linear-gradient(135deg,#a06aff,#ff3c64)", color:"#fff", fontSize:8, fontWeight:700, padding:"2px 6px", borderRadius:4, letterSpacing:".08em" }}>MAIN</div>
+              )}
+              
+              {/* Remove button */}
+              <button type="button" onClick={()=>removeImg(idx)} style={{ position:"absolute", top:4, right:4, width:22, height:22, borderRadius:"50%", background:"rgba(0,0,0,.85)", border:"1px solid rgba(255,255,255,.2)", color:"#fff", fontSize:11, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+              
+              {/* Make main button (only show on non-main images) */}
+              {idx !== 0 && (
+                <button type="button" onClick={()=>makeMain(idx)} style={{ position:"absolute", bottom:4, left:4, right:4, background:"rgba(0,0,0,.7)", border:"1px solid rgba(160,106,255,.4)", color:"#c084fc", fontSize:9, fontWeight:600, padding:"3px 4px", borderRadius:5, cursor:"pointer", letterSpacing:".05em" }}>SET MAIN</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* URL input */}
+      <div style={{ display:"flex", gap:8, marginBottom:6 }}>
+        <input className="form-field" type="text" placeholder="Paste image URL (https://…)" value={urlInput}
+          onChange={e=>{setUrlInput(e.target.value);setUrlError("");}}
+          onKeyDown={e=>e.key==="Enter"&&(e.preventDefault(),addUrl())}
+          disabled={images.length >= MAX_IMAGES}
+          style={{ flex:1, fontSize:12, opacity: images.length >= MAX_IMAGES ? 0.5 : 1 }} />
+        <button type="button" onClick={addUrl} disabled={images.length >= MAX_IMAGES}
+          style={{ padding:"10px 14px", background:"linear-gradient(135deg,#a06aff,#ff3c64)", border:"none", borderRadius:10, color:"#fff", fontSize:12, fontWeight:700, cursor:images.length >= MAX_IMAGES ? "not-allowed":"pointer", flexShrink:0, opacity: images.length >= MAX_IMAGES ? 0.5 : 1 }}>+ Add</button>
+      </div>
+      {urlError && <div style={{ fontSize:11, color:"#ff3c64", marginBottom:6 }}>{urlError}</div>}
+
+      {/* File upload */}
+      <input ref={fileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={handleFiles} />
+      <button type="button" onClick={()=>fileRef.current?.click()} disabled={images.length >= MAX_IMAGES}
+        style={{ width:"100%", padding:"9px", background:"rgba(160,106,255,.1)", border:"1px dashed rgba(160,106,255,.3)", borderRadius:10, color:"#a06aff", fontSize:12, fontWeight:600, cursor:images.length >= MAX_IMAGES ? "not-allowed":"pointer", opacity: images.length >= MAX_IMAGES ? 0.5 : 1 }}>
+        ↑ Upload from device (multiple)
+      </button>
+      <div style={{ fontSize:10, color:"#444", marginTop:6 }}>
+        First image = main image shown in product cards. Click "SET MAIN" to reorder.
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════ SINGLE IMAGE INPUT (for hero only) ═══════════════ */
 function ImageInput({ image, onSet, onClear, label="Image" }) {
   const [urlInput, setUrlInput] = useState("");
   const [urlError, setUrlError] = useState("");
@@ -457,7 +560,6 @@ function ImageInput({ image, onSet, onClear, label="Image" }) {
         style={{ width:"100%", padding:"9px", background:"rgba(160,106,255,.1)", border:"1px dashed rgba(160,106,255,.3)", borderRadius:10, color:"#a06aff", fontSize:12, fontWeight:600, cursor:"pointer" }}>
         ↑ Upload to Supabase Storage
       </button>
-      <div style={{ fontSize:10, color:"#444", marginTop:6 }}>Uploaded images store permanently. URLs also work.</div>
     </div>
   );
 }
@@ -477,7 +579,7 @@ function GlobalStyles() {
       .admin-tab.active{background:rgba(160,106,255,.14);border-color:rgba(160,106,255,.3);color:#c084fc;}
       .kpi-card{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:17px;padding:18px;transition:all .2s;}
       .kpi-card:hover{background:rgba(255,255,255,.06);}
-      .inv-row{display:grid;grid-template-columns:1fr auto auto auto auto;gap:14px;align-items:center;padding:14px 16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:13px;transition:all .2s;}
+      .inv-row{display:grid;grid-template-columns:48px 1fr auto auto auto auto;gap:14px;align-items:center;padding:12px 14px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:13px;transition:all .2s;}
       .inv-row:hover{background:rgba(255,255,255,.05);}
       .status-sel{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:8px;color:#ccc;font-size:12px;padding:5px 9px;cursor:pointer;outline:none;font-family:'DM Sans',sans-serif;}
       .success-badge{background:rgba(0,212,150,.14);border:1px solid rgba(0,212,150,.28);color:#00d496;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;}
