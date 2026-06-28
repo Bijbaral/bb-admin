@@ -115,7 +115,7 @@ function AdminDashboard({ onLogout }) {
   const [editingProduct, setEditingProduct] = useState(null);
   const [addSuccess, setAddSuccess] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
-  const [newProduct, setNewProduct] = useState({ name:"", type:"T-Shirts", gender:"MEN", size:"M", fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", images:[], stock:0 });
+  const [newProduct, setNewProduct] = useState({ name:"", type:"T-Shirts", gender:"MEN", sizes:["M"], fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", images:[], stock:0 });
   const [newOrder, setNewOrder] = useState({ customer:"", product:"", gender:"MEN", qty:1, amount:"", status:"Pending" });
 
   useEffect(() => {
@@ -139,24 +139,31 @@ function AdminDashboard({ onLogout }) {
   async function handleAddProduct(e) {
     e.preventDefault();
     if (!newProduct.name||!newProduct.mrp||!newProduct.price) return;
+    if (!newProduct.sizes.length) { alert("Pick at least one size."); return; }
     const imgs = newProduct.images.length ? newProduct.images : ["https://images.unsplash.com/photo-1576566588028-4147f3842f27?w=600&q=80"];
     const { error } = await supabase.from("products").insert([{
-      name:newProduct.name, type:newProduct.type, gender:newProduct.gender, size:newProduct.size, fit:newProduct.fit,
+      name:newProduct.name, type:newProduct.type, gender:newProduct.gender,
+      size:newProduct.sizes[0], sizes:newProduct.sizes,
+      fit:newProduct.fit,
       mrp:+newProduct.mrp, price:+newProduct.price, tag:newProduct.tag,
       image: imgs[0],
       images: imgs,
       stock:+newProduct.stock||0,
     }]);
     if (error) { alert("Error: "+error.message); return; }
-    setNewProduct({ name:"", type:"T-Shirts", gender:"MEN", size:"M", fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", images:[], stock:0 });
+    setNewProduct({ name:"", type:"T-Shirts", gender:"MEN", sizes:["M"], fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", images:[], stock:0 });
     setAddSuccess(true); setTimeout(()=>setAddSuccess(false),2500);
   }
 
   async function handleSaveEdit(e) {
     e.preventDefault();
     const imgs = editingProduct.images?.length ? editingProduct.images : [editingProduct.image];
+    const sizes = editingProduct.sizes?.length ? editingProduct.sizes : (editingProduct.size ? [editingProduct.size] : []);
+    if (!sizes.length) { alert("Pick at least one size."); return; }
     const { error } = await supabase.from("products").update({
-      name:editingProduct.name, type:editingProduct.type, gender:editingProduct.gender, size:editingProduct.size, fit:editingProduct.fit,
+      name:editingProduct.name, type:editingProduct.type, gender:editingProduct.gender,
+      size:sizes[0], sizes,
+      fit:editingProduct.fit,
       mrp:+editingProduct.mrp, price:+editingProduct.price, tag:editingProduct.tag,
       image: imgs[0],
       images: imgs,
@@ -272,7 +279,6 @@ function AdminDashboard({ onLogout }) {
                     {[
                       {label:"Product Type",key:"type",opts:["T-Shirts","Shirts","Trousers","Shorts","Inner Wear","Socks","Sweatshirts","Hoodies","Oversized Tees","Tops","Bottomwear","Winterwear","Basics","Boys Wear","Girls Wear"]},
                       {label:"Gender",key:"gender",opts:["MEN","WOMEN","KIDS","UNISEX"]},
-                      {label:"Size",key:"size",opts:["S","M","L","XL","XXL"]},
                       {label:"Fit Type",key:"fit",opts:["Oversized","Boxy","True to Size","Standard Fit"]},
                     ].map(f => (
                       <div key={f.key}><label className="form-label">{f.label}</label><select className="form-field" value={newProduct[f.key]} onChange={e=>setNewProduct(p=>({...p,[f.key]:e.target.value}))}>{f.opts.map(o=><option key={o}>{o}</option>)}</select></div>
@@ -280,6 +286,7 @@ function AdminDashboard({ onLogout }) {
                     <div><label className="form-label">MRP (₹)</label><input className="form-field" type="number" placeholder="2499" value={newProduct.mrp} onChange={e=>setNewProduct(p=>({...p,mrp:e.target.value}))} /></div>
                     <div><label className="form-label">Selling Price (₹)</label><input className="form-field" type="number" placeholder="599" value={newProduct.price} onChange={e=>setNewProduct(p=>({...p,price:e.target.value}))} /></div>
                   </div>
+                  <SizeChips label="Sizes (tap multiple)" selected={newProduct.sizes} onChange={sizes=>setNewProduct(p=>({...p,sizes}))} />
                   <div className="admin-form-grid">
                     <div><label className="form-label">Tag</label><select className="form-field" value={newProduct.tag} onChange={e=>setNewProduct(p=>({...p,tag:e.target.value}))}>{["HOT DROP","LIMITED","NEW DROP"].map(t=><option key={t}>{t}</option>)}</select></div>
                     <div><label className="form-label">Stock</label><input className="form-field" type="number" placeholder="20" value={newProduct.stock} onChange={e=>setNewProduct(p=>({...p,stock:e.target.value}))} /></div>
@@ -305,11 +312,11 @@ function AdminDashboard({ onLogout }) {
                   <img src={p.image} alt={p.name} style={{ width:48, height:48, objectFit:"cover", borderRadius:8, border:"1px solid rgba(255,255,255,.1)", flexShrink:0 }} onError={e=>{e.target.style.display="none";}} />
                   <div>
                     <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{p.name}</div>
-                    <div style={{ fontSize:10, color:"#444", marginTop:2 }}>{p.type} · {p.gender} · {p.size} · {p.tag}{p.images?.length>1 ? ` · 📸 ${p.images.length} photos` : ""}</div>
+                    <div style={{ fontSize:10, color:"#444", marginTop:2 }}>{p.type} · {p.gender} · {(p.sizes && p.sizes.length) ? p.sizes.join("/") : p.size} · {p.tag}{p.images?.length>1 ? ` · 📸 ${p.images.length} photos` : ""}</div>
                   </div>
                   <div style={{ textAlign:"right" }}><div style={{ fontSize:15, fontWeight:600, color:"#fff" }}>{p.stock||0}</div><div style={{ fontSize:9, color:"#444" }}>stock</div></div>
                   <div style={{ textAlign:"right" }}><div style={{ fontSize:14, fontWeight:600, color:"#a06aff" }}>{fmt(p.price)}</div><div style={{ fontSize:9, color:"#444" }}>{fmt(p.mrp)} MRP</div></div>
-                  <button onClick={()=>setEditingProduct({...p, images: p.images?.length ? p.images : [p.image]})} style={{ padding:"5px 12px", background:"rgba(160,106,255,.14)", border:"1px solid rgba(160,106,255,.3)", borderRadius:8, color:"#c084fc", fontSize:11, fontWeight:600, cursor:"pointer" }}>Edit</button>
+                  <button onClick={()=>setEditingProduct({...p, images: p.images?.length ? p.images : [p.image], sizes: (p.sizes && p.sizes.length) ? p.sizes : (p.size ? [p.size] : [])})} style={{ padding:"5px 12px", background:"rgba(160,106,255,.14)", border:"1px solid rgba(160,106,255,.3)", borderRadius:8, color:"#c084fc", fontSize:11, fontWeight:600, cursor:"pointer" }}>Edit</button>
                   <button onClick={()=>handleDeleteProduct(p.id)} style={{ padding:"5px 12px", background:"rgba(255,60,100,.12)", border:"1px solid rgba(255,60,100,.3)", borderRadius:8, color:"#ff3c64", fontSize:11, fontWeight:600, cursor:"pointer" }}>Delete</button>
                 </div>
               ))}
@@ -399,11 +406,11 @@ function AdminDashboard({ onLogout }) {
                     <div><label className="form-label">Gender</label><select className="form-field" value={editingProduct.gender} onChange={e=>setEditingProduct(p=>({...p,gender:e.target.value}))}>{["MEN","WOMEN","KIDS","UNISEX"].map(g=><option key={g}>{g}</option>)}</select></div>
                     <div><label className="form-label">MRP (₹)</label><input className="form-field" type="number" value={editingProduct.mrp} onChange={e=>setEditingProduct(p=>({...p,mrp:e.target.value}))} /></div>
                     <div><label className="form-label">Selling Price (₹)</label><input className="form-field" type="number" value={editingProduct.price} onChange={e=>setEditingProduct(p=>({...p,price:e.target.value}))} /></div>
-                    <div><label className="form-label">Size</label><select className="form-field" value={editingProduct.size} onChange={e=>setEditingProduct(p=>({...p,size:e.target.value}))}>{["S","M","L","XL","XXL"].map(s=><option key={s}>{s}</option>)}</select></div>
                     <div><label className="form-label">Fit</label><select className="form-field" value={editingProduct.fit} onChange={e=>setEditingProduct(p=>({...p,fit:e.target.value}))}>{["Oversized","Boxy","True to Size","Standard Fit"].map(f=><option key={f}>{f}</option>)}</select></div>
                     <div><label className="form-label">Tag</label><select className="form-field" value={editingProduct.tag} onChange={e=>setEditingProduct(p=>({...p,tag:e.target.value}))}>{["HOT DROP","LIMITED","NEW DROP"].map(t=><option key={t}>{t}</option>)}</select></div>
                     <div><label className="form-label">Stock</label><input className="form-field" type="number" value={editingProduct.stock||0} onChange={e=>setEditingProduct(p=>({...p,stock:e.target.value}))} /></div>
                   </div>
+                  <SizeChips label="Sizes (tap multiple)" selected={editingProduct.sizes || []} onChange={sizes=>setEditingProduct(p=>({...p,sizes}))} />
                   <div style={{ display:"flex", gap:10, paddingTop:4 }}>
                     <button type="submit" className="submit-btn">Save Changes →</button>
                     <button type="button" onClick={()=>setEditingProduct(null)} style={{ padding:"12px 20px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:11, color:"#777", fontWeight:600, fontSize:14, cursor:"pointer" }}>Cancel</button>
@@ -414,6 +421,35 @@ function AdminDashboard({ onLogout }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ═══════════════ MULTI-SIZE CHIPS ═══════════════ */
+const SIZE_OPTIONS = ["S","M","L","XL","XXL"];
+function SizeChips({ selected = [], onChange, label = "Sizes" }) {
+  function toggle(s) {
+    if (selected.includes(s)) onChange(selected.filter(x=>x!==s));
+    else onChange([...selected, s].sort((a,b)=>SIZE_OPTIONS.indexOf(a)-SIZE_OPTIONS.indexOf(b)));
+  }
+  return (
+    <div>
+      <label className="form-label" style={{ display:"block", marginBottom:8 }}>{label}</label>
+      <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+        {SIZE_OPTIONS.map(s => {
+          const on = selected.includes(s);
+          return (
+            <button key={s} type="button" onClick={()=>toggle(s)} style={{
+              minWidth:46, padding:"9px 14px", borderRadius:10, cursor:"pointer", fontWeight:700, fontSize:13, letterSpacing:".05em",
+              background: on ? "linear-gradient(135deg,#a06aff,#ff3c64)" : "rgba(255,255,255,.04)",
+              border: on ? "1px solid transparent" : "1px solid rgba(255,255,255,.1)",
+              color: on ? "#fff" : "#888",
+              transition: "all .15s",
+            }}>{s}</button>
+          );
+        })}
+      </div>
+      {selected.length === 0 && <div style={{ fontSize:11, color:"#ff3c64", marginTop:8 }}>Pick at least one size.</div>}
     </div>
   );
 }
