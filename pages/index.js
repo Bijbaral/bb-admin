@@ -486,41 +486,34 @@ function AdminDashboard({ onLogout }) {
                 <div style={{ fontFamily:"Bebas Neue", fontSize:22, color:"#fff", marginBottom:4 }}>QUICK SALE</div>
                 <div style={{ fontSize:12, color:"#555", marginBottom:12 }}>Tap a product to record a sale</div>
 
-                {/* Sidebar layout: filters left, products right */}
-                <div className="sale-layout" style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
-                  {/* Left sidebar — filters */}
-                  <div className="sale-sidebar" style={{ width:170, flexShrink:0, position:"sticky", top:90, display:"flex", flexDirection:"column", gap:12 }}>
-                    {/* Gender tabs (vertical) */}
-                    <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:14, overflow:"hidden" }}>
+                {/* Filters: gender dropdown + category tabs + search */}
+                <div style={{ display:"flex", gap:10, alignItems:"flex-end", flexWrap:"wrap", marginBottom:14 }}>
+                  <div>
+                    <label style={{ fontSize:9, color:"#555", textTransform:"uppercase", letterSpacing:".1em", marginBottom:5, display:"block" }}>Gender</label>
+                    <select className="form-field" value={saleGenderFilter} onChange={e=>{setSaleGenderFilter(e.target.value);setSaleTypeFilter("All");}} style={{ fontSize:12, padding:"9px 14px", minWidth:140 }}>
                       {["All","MEN","WOMEN","KIDS","UNISEX"].map(g => (
-                        <button key={g} type="button" onClick={()=>{setSaleGenderFilter(g);setSaleTypeFilter("All");}} style={{
-                          display:"block", width:"100%", padding:"11px 14px", cursor:"pointer", fontWeight:600, fontSize:12, letterSpacing:".03em", textAlign:"left",
-                          background: saleGenderFilter===g ? "linear-gradient(135deg,rgba(160,106,255,.2),rgba(255,60,100,.12))" : "transparent",
-                          border:"none", borderBottom:"1px solid rgba(255,255,255,.04)",
-                          borderLeft: saleGenderFilter===g ? "3px solid #a06aff" : "3px solid transparent",
-                          color: saleGenderFilter===g ? "#c084fc" : "#666", transition:"all .15s",
-                        }}>{g === "All" ? "All Genders" : g.charAt(0) + g.slice(1).toLowerCase()}</button>
+                        <option key={g} value={g}>{g === "All" ? "All Genders" : g.charAt(0) + g.slice(1).toLowerCase()}</option>
                       ))}
-                    </div>
-
-                    {/* Category dropdown */}
-                    <div>
-                      <label style={{ fontSize:9, color:"#555", textTransform:"uppercase", letterSpacing:".1em", marginBottom:5, display:"block" }}>Category</label>
-                      <select className="form-field" value={saleTypeFilter} onChange={e=>setSaleTypeFilter(e.target.value)} style={{ fontSize:12, padding:"9px 11px" }}>
-                        {saleTypeOptions.map(t => (
-                          <option key={t} value={t}>{t}{t !== "All" ? ` (${products.filter(p=> (saleGenderFilter==="All" || p.gender===saleGenderFilter) && p.type===t).length})` : ""}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Search */}
-                    <input className="form-field" type="text" placeholder="Search…" value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} style={{ fontSize:12, padding:"9px 11px" }} />
-
-                    <div style={{ fontSize:10, color:"#444", padding:"0 4px" }}>{filteredProducts.length} product{filteredProducts.length !== 1 ? "s" : ""}</div>
+                    </select>
                   </div>
+                  <input className="form-field" type="text" placeholder="Search by name…" value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} style={{ fontSize:12, padding:"9px 14px", maxWidth:220 }} />
+                  <div style={{ fontSize:10, color:"#444", paddingBottom:4 }}>{filteredProducts.length} product{filteredProducts.length !== 1 ? "s" : ""}</div>
+                </div>
 
-                  {/* Right side — product grid */}
-                  <div style={{ flex:1, minWidth:0 }}>
+                {/* Category tabs */}
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:16 }}>
+                  {saleTypeOptions.map(t => (
+                    <button key={t} type="button" onClick={()=>setSaleTypeFilter(t)} style={{
+                      padding:"7px 14px", borderRadius:9, cursor:"pointer", fontWeight:600, fontSize:11, letterSpacing:".03em",
+                      background: saleTypeFilter===t ? "linear-gradient(135deg,#a06aff,#ff3c64)" : "rgba(255,255,255,.04)",
+                      border: saleTypeFilter===t ? "1px solid transparent" : "1px solid rgba(255,255,255,.08)",
+                      color: saleTypeFilter===t ? "#fff" : "#666", whiteSpace:"nowrap", transition:"all .15s",
+                    }}>{t}{t !== "All" ? ` (${products.filter(p=> (saleGenderFilter==="All" || p.gender===saleGenderFilter) && p.type===t).length})` : ""}</button>
+                  ))}
+                </div>
+
+                {/* Product grid */}
+                <div>
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:10, marginBottom:32 }}>
                       {filteredProducts.map(p => {
                         const totalStock = p.stock_by_size ? Object.values(p.stock_by_size).reduce((a,b)=>a+b,0) : (p.stock||0);
@@ -549,8 +542,6 @@ function AdminDashboard({ onLogout }) {
                         <div style={{ gridColumn:"1/-1", textAlign:"center", padding:"40px 20px", color:"#444", fontSize:13 }}>No products match these filters.</div>
                       )}
                     </div>
-                  </div>
-                </div>
               </>
             ) : (
               /* ── Sale capture panel ── */
@@ -859,14 +850,18 @@ function AdminDashboard({ onLogout }) {
             </div>
             )}
 
-            {/* Withdrawal — collapsible */}
-            <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24 }}>
-              <div onClick={()=>setWithdrawalOpen(o=>!o)} style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ffb400", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", userSelect:"none" }}>
-                <span>WITHDRAWALS</span>
-                <span style={{ fontSize:14, color:"#555", transition:"transform .2s", transform: withdrawalOpen ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
+            {/* Withdrawal — collapsible (same style as Performance Timeline) */}
+            <div style={{ padding:"16px 22px", background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24, cursor:"pointer" }} onClick={()=>setWithdrawalOpen(o=>!o)}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ffb400", display:"flex", alignItems:"center", gap:10 }}>
+                  <span style={{ fontSize:14, transition:"transform .2s", transform: withdrawalOpen ? "rotate(90deg)" : "rotate(0deg)", display:"inline-block" }}>▶</span>
+                  WITHDRAWALS
+                </div>
+                <div style={{ fontSize:11, color:"#555" }}>{withdrawalOpen ? "Click to collapse" : "Click to expand"}</div>
               </div>
+            </div>
             {withdrawalOpen && (<>
-              <div style={{ marginTop:16 }} />
+              <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24, marginTop:-20 }}>
               <form onSubmit={async (e) => {
                 e.preventDefault();
                 if (!newWithdrawal.amount) return;
@@ -924,8 +919,8 @@ function AdminDashboard({ onLogout }) {
                   </>
                 );
               })()}
-            </>)}
             </div>
+            </>)}
 
             {/* Add Expense */}
             <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24 }}>
@@ -1270,7 +1265,6 @@ function GlobalStyles() {
       .success-badge{background:rgba(0,212,150,.14);border:1px solid rgba(0,212,150,.28);color:#00d496;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;}
       .admin-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
       @media(max-width:480px){.admin-form-grid{grid-template-columns:1fr!important;}}
-      @media(max-width:640px){.sale-layout{flex-direction:column!important;}.sale-sidebar{width:100%!important;position:static!important;}}
       .bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;}
       .bar-fill{width:100%;background:linear-gradient(180deg,rgba(160,106,255,.75),rgba(255,60,100,.75));border-radius:6px 6px 0 0;transition:height .8s cubic-bezier(.4,0,.2,1);}
       .modal-backdrop{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:20px;}
