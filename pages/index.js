@@ -123,6 +123,7 @@ function AdminDashboard({ onLogout }) {
   const [salePrice, setSalePrice] = useState("");
   const [saleQty, setSaleQty] = useState(1);
   const [saleChannel, setSaleChannel] = useState("Store");
+  const [saleShipping, setSaleShipping] = useState("");
   const [saleCustomer, setSaleCustomer] = useState("");
   const [saleSuccess, setSaleSuccess] = useState(false);
   const [saleSearch, setSaleSearch] = useState("");
@@ -165,6 +166,7 @@ function AdminDashboard({ onLogout }) {
     setSalePrice(String(p.price));
     setSaleQty(1);
     setSaleChannel("Store");
+    setSaleShipping("");
     setSaleCustomer("");
   }
 
@@ -181,6 +183,7 @@ function AdminDashboard({ onLogout }) {
       unit_price: +salePrice,
       total_amount: total,
       channel: saleChannel,
+      shipping_cost: +saleShipping || 0,
       customer_name: saleCustomer || null,
     }]);
     if (error) { alert("Error: " + error.message); return; }
@@ -296,11 +299,13 @@ function AdminDashboard({ onLogout }) {
 
   const monthSales = sales.filter(s => s.created_at?.slice(0,7) === booksMonth);
   const monthRevenue = monthSales.reduce((s, r) => s + (+r.total_amount), 0);
+  const monthShipping = monthSales.reduce((s, r) => s + (+r.shipping_cost || 0), 0);
   const monthExpenses = expenses.filter(e => e.expense_date?.slice(0,7) === booksMonth);
   const monthExpenseTotal = monthExpenses.reduce((s, e) => s + (+e.amount), 0);
-  const monthProfit = monthRevenue - monthExpenseTotal;
+  const monthProfit = monthRevenue - monthExpenseTotal - monthShipping;
 
   const totalRevenue = sales.reduce((s, r) => s + (+r.total_amount), 0);
+  const totalShipping = sales.reduce((s, r) => s + (+r.shipping_cost || 0), 0);
   const totalExpenseAll = expenses.reduce((s, e) => s + (+e.amount), 0);
 
   const filteredProducts = saleSearch
@@ -457,6 +462,12 @@ function AdminDashboard({ onLogout }) {
                       ))}
                     </div>
 
+                    {/* Shipping Cost (Online sales) */}
+                    <div style={{ marginBottom:14 }}>
+                      <label className="form-label">Shipping Cost (₹)</label>
+                      <input className="form-field" type="number" placeholder="0" value={saleShipping} onChange={e=>setSaleShipping(e.target.value)} />
+                    </div>
+
                     {/* Customer (optional) */}
                     <div style={{ marginBottom:18 }}>
                       <label className="form-label">Customer Name (optional)</label>
@@ -464,9 +475,17 @@ function AdminDashboard({ onLogout }) {
                     </div>
 
                     {/* Total */}
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"14px 16px", background:"rgba(160,106,255,.08)", border:"1px solid rgba(160,106,255,.2)", borderRadius:12, marginBottom:18 }}>
-                      <div style={{ fontSize:12, color:"#888", fontWeight:600, textTransform:"uppercase", letterSpacing:".08em" }}>Total</div>
-                      <div style={{ fontFamily:"Bebas Neue", fontSize:32, color:"#a06aff" }}>{fmt((+salePrice||0) * saleQty)}</div>
+                    <div style={{ padding:"14px 16px", background:"rgba(160,106,255,.08)", border:"1px solid rgba(160,106,255,.2)", borderRadius:12, marginBottom:18 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                        <div style={{ fontSize:12, color:"#888", fontWeight:600, textTransform:"uppercase", letterSpacing:".08em" }}>Total</div>
+                        <div style={{ fontFamily:"Bebas Neue", fontSize:32, color:"#a06aff" }}>{fmt((+salePrice||0) * saleQty + (+saleShipping||0))}</div>
+                      </div>
+                      {(+saleShipping||0) > 0 && (
+                        <div style={{ display:"flex", justifyContent:"space-between", marginTop:6, fontSize:11, color:"#666" }}>
+                          <span>Product: {fmt((+salePrice||0) * saleQty)}</span>
+                          <span>Shipping: {fmt(+saleShipping)}</span>
+                        </div>
+                      )}
                     </div>
 
                     <button type="submit" className="submit-btn" style={{ width:"100%" }} disabled={!saleSize}>
@@ -487,7 +506,7 @@ function AdminDashboard({ onLogout }) {
                       <img src={s.product_image} alt="" style={{ width:40, height:40, objectFit:"cover", borderRadius:8 }} onError={e=>{e.target.style.display="none";}} />
                       <div>
                         <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{s.product_name}</div>
-                        <div style={{ fontSize:10, color:"#555" }}>Size {s.size} · Qty {s.quantity} · {s.channel}</div>
+                        <div style={{ fontSize:10, color:"#555" }}>Size {s.size} · Qty {s.quantity} · {s.channel}{s.shipping_cost > 0 ? ` · Ship ${fmt(s.shipping_cost)}` : ""}</div>
                       </div>
                       <div style={{ fontSize:9, padding:"3px 8px", borderRadius:6, fontWeight:600, background: s.channel==="Store" ? "rgba(160,106,255,.12)" : "rgba(0,212,150,.12)", color: s.channel==="Store" ? "#a06aff" : "#00d496" }}>{s.channel}</div>
                       <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#a06aff" }}>{fmt(s.total_amount)}</div>
@@ -597,9 +616,10 @@ function AdminDashboard({ onLogout }) {
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:12, marginBottom:24 }}>
               {[
                 { label:"Revenue", value:fmt(monthRevenue), color:"#00d496" },
+                { label:"Shipping", value:fmt(monthShipping), color:"#00b4ff" },
                 { label:"Expenses", value:fmt(monthExpenseTotal), color:"#ff3c64" },
                 { label:"Net Profit", value:fmt(monthProfit), color: monthProfit >= 0 ? "#00d496" : "#ff3c64" },
-                { label:"All-Time Profit", value:fmt(totalRevenue - totalExpenseAll), color:"#a06aff" },
+                { label:"All-Time Profit", value:fmt(totalRevenue - totalExpenseAll - totalShipping), color:"#a06aff" },
               ].map(k => (
                 <div key={k.label} className="kpi-card">
                   <div style={{ fontSize:10, color:"#444", textTransform:"uppercase", letterSpacing:".1em", marginBottom:7 }}>{k.label}</div>
@@ -676,7 +696,7 @@ function AdminDashboard({ onLogout }) {
                     <div key={s.id} style={{ display:"grid", gridTemplateColumns:"1fr auto auto", gap:12, alignItems:"center", padding:"10px 14px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:12 }}>
                       <div>
                         <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{s.product_name}</div>
-                        <div style={{ fontSize:10, color:"#555" }}>Size {s.size} · Qty {s.quantity} · {s.channel}{s.customer_name ? ` · ${s.customer_name}` : ""}</div>
+                        <div style={{ fontSize:10, color:"#555" }}>Size {s.size} · Qty {s.quantity} · {s.channel}{s.shipping_cost > 0 ? ` · Ship ${fmt(s.shipping_cost)}` : ""}{s.customer_name ? ` · ${s.customer_name}` : ""}</div>
                       </div>
                       <div style={{ fontSize:9, padding:"3px 8px", borderRadius:6, fontWeight:600, background: s.channel==="Store" ? "rgba(160,106,255,.12)" : "rgba(0,212,150,.12)", color: s.channel==="Store" ? "#a06aff" : "#00d496" }}>{s.channel}</div>
                       <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#00d496" }}>{fmt(s.total_amount)}</div>
@@ -939,4 +959,3 @@ function GlobalStyles() {
     `}</style>
   );
 }
-
