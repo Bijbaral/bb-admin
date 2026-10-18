@@ -114,9 +114,7 @@ function AdminDashboard({ onLogout }) {
   const [heroImage, setHeroImage] = useState("");
   const [editingProduct, setEditingProduct] = useState(null);
   const [addSuccess, setAddSuccess] = useState(false);
-  const [orderSuccess, setOrderSuccess] = useState(false);
   const [newProduct, setNewProduct] = useState({ name:"", type:"T-Shirts", gender:"MEN", sizes:["M"], fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", images:[], stock:0 });
-  const [newOrder, setNewOrder] = useState({ customer:"", phone:"", product:"", gender:"MEN", qty:1, amount:"", status:"Pending" });
 
   // Sale capture state
   const [saleProduct, setSaleProduct] = useState(null);
@@ -304,15 +302,6 @@ function AdminDashboard({ onLogout }) {
   }
 
   /* ── Orders ── */
-  async function handleAddOrder(e) {
-    e.preventDefault();
-    if (!newOrder.customer||!newOrder.product||!newOrder.amount) return;
-    const { error } = await supabase.from("orders").insert([{ ...newOrder, qty:+newOrder.qty, amount:+newOrder.amount }]);
-    if (error) { alert("Error: "+error.message); return; }
-    setNewOrder({ customer:"", phone:"", product:"", gender:"MEN", qty:1, amount:"", status:"Pending" });
-    setOrderSuccess(true); setTimeout(()=>setOrderSuccess(false),2500);
-  }
-
   async function updateOrderStatus(id, status) {
     await supabase.from("orders").update({ status }).eq("id", id);
   }
@@ -662,18 +651,32 @@ function AdminDashboard({ onLogout }) {
               <div>
                 <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#fff", marginBottom:12 }}>TODAY'S SALES</div>
                 <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {todaySales.map(s => (
-                    <div key={s.id} style={{ display:"grid", gridTemplateColumns:"40px 1fr auto auto auto", gap:12, alignItems:"center", padding:"10px 14px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:12 }}>
-                      <img src={s.product_image} alt="" style={{ width:40, height:40, objectFit:"cover", borderRadius:8 }} onError={e=>{e.target.style.display="none";}} />
-                      <div>
-                        <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{s.product_name}{s.customer_name ? ` — ${s.customer_name}` : ""}</div>
-                        <div style={{ fontSize:10, color:"#555" }}>Size {s.size} · Qty {s.quantity} · {s.channel}{s.shipping_cost > 0 ? ` · Ship ${fmt(s.shipping_cost)}` : ""}{s.customer_phone ? ` · ${s.customer_phone}` : ""}</div>
+                  {todaySales.map(s => {
+                    const orderProduct = `${s.product_name} (${s.size})`;
+                    const matchedOrder = orders.find(o => o.product === orderProduct && +o.amount === +s.total_amount);
+                    return (
+                      <div key={s.id} style={{ padding:"12px 14px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:12 }}>
+                        <div style={{ display:"grid", gridTemplateColumns:"40px 1fr auto auto auto", gap:12, alignItems:"center" }}>
+                          <img src={s.product_image} alt="" style={{ width:40, height:40, objectFit:"cover", borderRadius:8 }} onError={e=>{e.target.style.display="none";}} />
+                          <div>
+                            <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{s.product_name}{s.customer_name ? ` — ${s.customer_name}` : ""}</div>
+                            <div style={{ fontSize:10, color:"#555" }}>Size {s.size} · Qty {s.quantity} · {s.channel}{s.shipping_cost > 0 ? ` · Ship ${fmt(s.shipping_cost)}` : ""}{s.customer_phone ? ` · ${s.customer_phone}` : ""}</div>
+                          </div>
+                          <div style={{ fontSize:9, padding:"3px 8px", borderRadius:6, fontWeight:600, background: s.channel==="Store" ? "rgba(160,106,255,.12)" : "rgba(0,212,150,.12)", color: s.channel==="Store" ? "#a06aff" : "#00d496" }}>{s.channel}</div>
+                          <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#a06aff" }}>{fmt(s.total_amount)}</div>
+                          <button onClick={()=>handleDeleteSale(s)} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
+                        </div>
+                        {matchedOrder && (
+                          <div style={{ marginTop:8, paddingTop:8, borderTop:"1px solid rgba(255,255,255,.05)", display:"flex", alignItems:"center", gap:10 }}>
+                            <span style={{ fontSize:10, color:"#555", letterSpacing:".08em", textTransform:"uppercase" }}>Status</span>
+                            <select className="status-sel" value={matchedOrder.status} onChange={e=>updateOrderStatus(matchedOrder.id,e.target.value)} style={{ background:STATUS_COLORS[matchedOrder.status]?.bg, color:STATUS_COLORS[matchedOrder.status]?.color, borderColor:`${STATUS_COLORS[matchedOrder.status]?.color}44` }}>
+                              {["Pending","Packed","Shipped","Delivered","Cancelled"].map(st=><option key={st} style={{background:"#1a1a1a",color:"#ccc"}}>{st}</option>)}
+                            </select>
+                          </div>
+                        )}
                       </div>
-                      <div style={{ fontSize:9, padding:"3px 8px", borderRadius:6, fontWeight:600, background: s.channel==="Store" ? "rgba(160,106,255,.12)" : "rgba(0,212,150,.12)", color: s.channel==="Store" ? "#a06aff" : "#00d496" }}>{s.channel}</div>
-                      <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#a06aff" }}>{fmt(s.total_amount)}</div>
-                      <button onClick={()=>handleDeleteSale(s)} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1031,22 +1034,6 @@ function AdminDashboard({ onLogout }) {
               </div>
             </div>
             <div style={{ fontSize:11, color:"#444", marginBottom:14 }}>{filteredOrders.length} of {orders.length} orders</div>
-            <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:22 }}>
-              <div style={{ fontFamily:"Bebas Neue", fontSize:17, color:"#a06aff", marginBottom:16 }}>ADD MANUAL ORDER</div>
-              <form onSubmit={handleAddOrder}>
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:12, marginBottom:14 }}>
-                  {[["Customer Name","customer","text","Arjun Sharma"],["Phone","phone","tel","9876543210"],["Product","product","text","Product name"],["Quantity","qty","number","1"],["Amount (₹)","amount","number","599"]].map(([l,k,t,ph]) => (
-                    <div key={k}><label className="form-label">{l}</label><input className="form-field" type={t} placeholder={ph} value={newOrder[k]} onChange={e=>setNewOrder(o=>({...o,[k]:e.target.value}))} /></div>
-                  ))}
-                  <div><label className="form-label">Gender</label><select className="form-field" value={newOrder.gender} onChange={e=>setNewOrder(o=>({...o,gender:e.target.value}))}>{["MEN","WOMEN","KIDS","UNISEX"].map(g=><option key={g}>{g}</option>)}</select></div>
-                  <div><label className="form-label">Status</label><select className="form-field" value={newOrder.status} onChange={e=>setNewOrder(o=>({...o,status:e.target.value}))}>{["Pending","Packed","Shipped","Delivered","Cancelled"].map(s=><option key={s}>{s}</option>)}</select></div>
-                </div>
-                <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
-                  <button type="submit" className="submit-btn">Add Order →</button>
-                  {orderSuccess && <div className="success-badge">✓ Order saved!</div>}
-                </div>
-              </form>
-            </div>
             <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
               {filteredOrders.map(o => (
                 <div key={o.id} style={{ padding:"16px 18px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:15, display:"grid", gridTemplateColumns:"1fr auto auto auto", gap:14, alignItems:"center" }}>
