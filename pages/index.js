@@ -513,7 +513,6 @@ function AdminDashboard({ onLogout }) {
                 </div>
 
                 {/* Product grid */}
-                <div>
                     <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:10, marginBottom:32 }}>
                       {filteredProducts.map(p => {
                         const totalStock = p.stock_by_size ? Object.values(p.stock_by_size).reduce((a,b)=>a+b,0) : (p.stock||0);
