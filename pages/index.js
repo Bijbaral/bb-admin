@@ -317,6 +317,11 @@ function AdminDashboard({ onLogout }) {
     await supabase.from("orders").update({ status }).eq("id", id);
   }
 
+  async function handleDeleteOrder(id) {
+    if (!confirm("Delete this order?")) return;
+    await supabase.from("orders").delete().eq("id", id);
+  }
+
   /* ── Expenses ── */
   async function handleAddExpense(e) {
     e.preventDefault();
@@ -1044,12 +1049,13 @@ function AdminDashboard({ onLogout }) {
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
               {filteredOrders.map(o => (
-                <div key={o.id} style={{ padding:"16px 18px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:15, display:"grid", gridTemplateColumns:"1fr auto auto", gap:14, alignItems:"center" }}>
+                <div key={o.id} style={{ padding:"16px 18px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:15, display:"grid", gridTemplateColumns:"1fr auto auto auto", gap:14, alignItems:"center" }}>
                   <div><div style={{ fontSize:13, fontWeight:600, color:"#fff" }}>{o.customer}{o.phone ? ` · ${o.phone}` : ""}</div><div style={{ fontSize:11, color:"#555", marginTop:2 }}>{o.product} · {o.gender} · Qty {o.qty}</div></div>
                   <div style={{ fontFamily:"Bebas Neue", fontSize:20, color:"#a06aff" }}>{fmt(o.amount)}</div>
                   <select className="status-sel" value={o.status} onChange={e=>updateOrderStatus(o.id,e.target.value)} style={{ background:STATUS_COLORS[o.status]?.bg, color:STATUS_COLORS[o.status]?.color, borderColor:`${STATUS_COLORS[o.status]?.color}44` }}>
                     {["Pending","Packed","Shipped","Delivered","Cancelled"].map(s=><option key={s} style={{background:"#1a1a1a",color:"#ccc"}}>{s}</option>)}
                   </select>
+                  <button onClick={()=>handleDeleteOrder(o.id)} style={{ padding:"5px 10px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:7, color:"#ff3c64", fontSize:10, fontWeight:600, cursor:"pointer" }}>Delete</button>
                 </div>
               ))}
               {filteredOrders.length === 0 && <div style={{ fontSize:13, color:"#444", padding:20, textAlign:"center" }}>{orderSearch || orderStatusFilter !== "All" ? "No matching orders." : "No orders yet."}</div>}
