@@ -311,10 +311,15 @@ function AdminDashboard({ onLogout }) {
   }
 
   async function handleDeleteOrder(id) {
-    if (!confirm("Delete this order?")) return;
-    const { error } = await supabase.from("orders").delete().eq("id", id);
-    if (error) return alert("Delete failed: " + error.message);
-    setOrders(prev => prev.filter(o => o.id !== id));
+    try {
+      if (!confirm("Delete this order? (ID: " + id + ")")) return;
+      const res = await supabase.from("orders").delete().eq("id", id).select();
+      if (res.error) return alert("Delete error: " + JSON.stringify(res.error));
+      alert("Deleted " + (res.data?.length || 0) + " row(s) for ID " + id);
+      setOrders(prev => prev.filter(o => o.id !== id));
+    } catch (e) {
+      alert("JS error: " + e.message);
+    }
   }
 
   /* ── Expenses ── */
@@ -340,7 +345,8 @@ function AdminDashboard({ onLogout }) {
   }
 
   async function handleDeleteSale(sale) {
-    if (!confirm("Delete this sale record? Stock will be restored.")) return;
+    try {
+    if (!confirm("Delete this sale? (ID: " + sale.id + ")")) return;
     // Restore stock
     if (sale.product_id) {
       const prod = products.find(p => p.id === sale.product_id);
@@ -362,7 +368,9 @@ function AdminDashboard({ onLogout }) {
     }
     const { error } = await supabase.from("sales").delete().eq("id", sale.id);
     if (error) return alert("Sale delete failed: " + error.message);
+    alert("Sale " + sale.id + " deleted successfully");
     setSales(prev => prev.filter(s => s.id !== sale.id));
+    } catch (e) { alert("JS error in sale delete: " + e.message); }
   }
 
   async function setHero(url) {
