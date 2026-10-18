@@ -143,6 +143,13 @@ function AdminDashboard({ onLogout }) {
   const [orderSearch, setOrderSearch] = useState("");
   const [orderStatusFilter, setOrderStatusFilter] = useState("All");
 
+  // Timeline collapsible
+  const [timelineOpen, setTimelineOpen] = useState(false);
+
+  // Withdrawal state
+  const [newWithdrawal, setNewWithdrawal] = useState({ amount:"", description:"", date: new Date().toISOString().slice(0,10) });
+  const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
+
   useEffect(() => {
     async function load() {
       const [{ data: prods }, { data: sls }, { data: exps }, { data: ords }, { data: hero }] = await Promise.all([
@@ -220,7 +227,16 @@ function AdminDashboard({ onLogout }) {
     }).eq("id", saleProduct.id);
 
     setSaleProduct(null);
-    setSaleSuccess(true); setTimeout(() => setSaleSuccess(false), 2500);
+    setSaleSize("");
+    setSalePrice("");
+    setSaleQty(1);
+    setSaleChannel("Store");
+    setSaleShipping("");
+    setSaleCustomer("");
+    setSalePhone("");
+    setSaleSuccess(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => setSaleSuccess(false), 4000);
   }
 
   /* ── Products ── */
@@ -339,13 +355,13 @@ function AdminDashboard({ onLogout }) {
   const monthSales = sales.filter(s => s.created_at?.slice(0,7) === booksMonth);
   const monthRevenue = monthSales.reduce((s, r) => s + (+r.total_amount), 0);
   const monthShipping = monthSales.reduce((s, r) => s + (+r.shipping_cost || 0), 0);
-  const monthExpenses = expenses.filter(e => e.expense_date?.slice(0,7) === booksMonth);
+  const monthExpenses = expenses.filter(e => e.expense_date?.slice(0,7) === booksMonth && e.category !== "Withdrawal");
   const monthExpenseTotal = monthExpenses.reduce((s, e) => s + (+e.amount), 0);
   const monthProfit = monthRevenue - monthExpenseTotal - monthShipping;
 
   const totalRevenue = sales.reduce((s, r) => s + (+r.total_amount), 0);
   const totalShipping = sales.reduce((s, r) => s + (+r.shipping_cost || 0), 0);
-  const totalExpenseAll = expenses.reduce((s, e) => s + (+e.amount), 0);
+  const totalExpenseAll = expenses.filter(e => e.category !== "Withdrawal").reduce((s, e) => s + (+e.amount), 0);
 
   const saleTypeOptions = ["All", ...new Set(products.map(p => p.type).filter(Boolean))];
   const filteredProducts = products.filter(p => {
@@ -376,7 +392,7 @@ function AdminDashboard({ onLogout }) {
       const daySales = sales.filter(s => s.created_at?.slice(0,10) === key);
       const dayRev = daySales.reduce((s,r) => s + (+r.total_amount), 0);
       const dayShip = daySales.reduce((s,r) => s + (+r.shipping_cost || 0), 0);
-      const dayExp = expenses.filter(e => e.expense_date === key).reduce((s,e) => s + (+e.amount), 0);
+      const dayExp = expenses.filter(e => e.expense_date === key && e.category !== "Withdrawal").reduce((s,e) => s + (+e.amount), 0);
       days.push({ date: key, label: `${d.getDate()}/${d.getMonth()+1}`, revenue: dayRev, shipping: dayShip, expenses: dayExp, profit: dayRev - dayExp - dayShip });
     }
     return days;
@@ -423,6 +439,15 @@ function AdminDashboard({ onLogout }) {
         {/* ═══════════ SALES TAB (HOME) ═══════════ */}
         {adminTab==="sales" && (
           <div className="fu">
+            {saleSuccess && (
+              <div style={{ padding:"16px 20px", background:"rgba(0,212,150,.12)", border:"2px solid rgba(0,212,150,.35)", borderRadius:14, marginBottom:20, display:"flex", alignItems:"center", gap:12, animation:"fadeUp .3s ease" }}>
+                <div style={{ width:36, height:36, borderRadius:"50%", background:"rgba(0,212,150,.2)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>✓</div>
+                <div>
+                  <div style={{ fontSize:15, fontWeight:700, color:"#00d496" }}>Sale Recorded Successfully!</div>
+                  <div style={{ fontSize:12, color:"#888", marginTop:2 }}>Stock updated. Order created.</div>
+                </div>
+              </div>
+            )}
             {/* KPI row */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12, marginBottom:24 }}>
               {[
@@ -572,11 +597,11 @@ function AdminDashboard({ onLogout }) {
                     {/* Customer details (optional) */}
                     <div className="admin-form-grid" style={{ marginBottom:18 }}>
                       <div>
-                        <label className="form-label">Customer Name</label>
+                        <label className="form-label">Customer Name <span style={{ color:"#555", fontWeight:400, textTransform:"none" }}>(optional)</span></label>
                         <input className="form-field" type="text" placeholder="Walk-in / Customer name" value={saleCustomer} onChange={e=>setSaleCustomer(e.target.value)} />
                       </div>
                       <div>
-                        <label className="form-label">Phone</label>
+                        <label className="form-label">Phone <span style={{ color:"#555", fontWeight:400, textTransform:"none" }}>(optional)</span></label>
                         <input className="form-field" type="tel" placeholder="9876543210" value={salePhone} onChange={e=>setSalePhone(e.target.value)} />
                       </div>
                     </div>
@@ -624,7 +649,6 @@ function AdminDashboard({ onLogout }) {
               </div>
             )}
 
-            {saleSuccess && <div className="success-badge" style={{ marginTop:16 }}>✓ Sale recorded! Stock updated.</div>}
           </div>
         )}
 
@@ -727,6 +751,7 @@ function AdminDashboard({ onLogout }) {
                 { label:"Expenses", value:fmt(monthExpenseTotal), color:"#ff3c64" },
                 { label:"Net Profit", value:fmt(monthProfit), color: monthProfit >= 0 ? "#00d496" : "#ff3c64" },
                 { label:"All-Time Profit", value:fmt(totalRevenue - totalExpenseAll - totalShipping), color:"#a06aff" },
+                { label:"Total Withdrawn", value:fmt(expenses.filter(e=>e.category==="Withdrawal").reduce((s,e)=>s+(+e.amount),0)), color:"#ffb400" },
               ].map(k => (
                 <div key={k.label} className="kpi-card">
                   <div style={{ fontSize:10, color:"#444", textTransform:"uppercase", letterSpacing:".1em", marginBottom:7 }}>{k.label}</div>
@@ -735,11 +760,21 @@ function AdminDashboard({ onLogout }) {
               ))}
             </div>
 
-            {/* Performance Timeline */}
-            <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24 }}>
+            {/* Performance Timeline (collapsible) */}
+            <div style={{ padding:"16px 22px", background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24, cursor:"pointer" }} onClick={()=>setTimelineOpen(o=>!o)}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#fff", display:"flex", alignItems:"center", gap:10 }}>
+                  <span style={{ fontSize:14, transition:"transform .2s", transform: timelineOpen ? "rotate(90deg)" : "rotate(0deg)", display:"inline-block" }}>▶</span>
+                  PERFORMANCE TIMELINE
+                </div>
+                <div style={{ fontSize:11, color:"#555" }}>{timelineOpen ? "Click to collapse" : "Click to expand"}</div>
+              </div>
+            </div>
+            {timelineOpen && (
+            <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24, marginTop:-20 }}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18, flexWrap:"wrap", gap:12 }}>
-                <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#fff" }}>PERFORMANCE TIMELINE</div>
-                <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                <div style={{ fontFamily:"Bebas Neue", fontSize:16, color:"#888" }}>DATE RANGE</div>
+                <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }} onClick={e=>e.stopPropagation()}>
                   <label style={{ fontSize:10, color:"#555", letterSpacing:".08em" }}>FROM</label>
                   <input type="date" value={booksFrom} onChange={e=>setBooksFrom(e.target.value)} style={{ padding:"6px 10px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:12, fontFamily:"'DM Sans',sans-serif" }} />
                   <label style={{ fontSize:10, color:"#555", letterSpacing:".08em" }}>TO</label>
@@ -787,6 +822,69 @@ function AdminDashboard({ onLogout }) {
                 </div>
               </div>
               {timelineDays.length === 0 && <div style={{ fontSize:13, color:"#444", textAlign:"center", padding:20 }}>No data for this range.</div>}
+            </div>
+            )}
+
+            {/* Add Withdrawal */}
+            <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24 }}>
+              <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ffb400", marginBottom:16 }}>WITHDRAWALS</div>
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (!newWithdrawal.amount) return;
+                const totalAmt = +newWithdrawal.amount;
+                const { error } = await supabase.from("expenses").insert([{
+                  category: "Withdrawal",
+                  description: newWithdrawal.description || "Owner withdrawal",
+                  amount: totalAmt,
+                  expense_date: newWithdrawal.date,
+                }]);
+                if (error) { alert("Error: " + error.message); return; }
+                setNewWithdrawal({ amount:"", description:"", date: new Date().toISOString().slice(0,10) });
+                setWithdrawalSuccess(true); setTimeout(()=>setWithdrawalSuccess(false), 2500);
+              }}>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:12, marginBottom:14 }}>
+                  <div><label className="form-label">Amount (₹)</label><input className="form-field" type="number" placeholder="5000" value={newWithdrawal.amount} onChange={e=>setNewWithdrawal(x=>({...x,amount:e.target.value}))} /></div>
+                  <div><label className="form-label">Date</label><input className="form-field" type="date" value={newWithdrawal.date} onChange={e=>setNewWithdrawal(x=>({...x,date:e.target.value}))} /></div>
+                  <div><label className="form-label">Note</label><input className="form-field" type="text" placeholder="Personal use, reinvestment…" value={newWithdrawal.description} onChange={e=>setNewWithdrawal(x=>({...x,description:e.target.value}))} /></div>
+                </div>
+                <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
+                  <button type="submit" className="submit-btn" style={{ background:"linear-gradient(135deg,#ffb400,#ff8c00)" }}>Record Withdrawal →</button>
+                  {withdrawalSuccess && <div className="success-badge">✓ Withdrawal recorded!</div>}
+                </div>
+              </form>
+              {(() => {
+                const monthWithdrawals = expenses.filter(e => e.category === "Withdrawal" && e.expense_date?.slice(0,7) === booksMonth);
+                const totalWithdrawn = monthWithdrawals.reduce((s,e) => s + (+e.amount), 0);
+                const allTimeWithdrawn = expenses.filter(e => e.category === "Withdrawal").reduce((s,e) => s + (+e.amount), 0);
+                return (
+                  <>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginTop:18, marginBottom:14 }}>
+                      <div style={{ padding:"12px 14px", background:"rgba(255,180,0,.06)", border:"1px solid rgba(255,180,0,.15)", borderRadius:12 }}>
+                        <div style={{ fontSize:9, color:"#666", textTransform:"uppercase", letterSpacing:".08em", marginBottom:4 }}>This Month</div>
+                        <div style={{ fontFamily:"Bebas Neue", fontSize:22, color:"#ffb400" }}>{fmt(totalWithdrawn)}</div>
+                      </div>
+                      <div style={{ padding:"12px 14px", background:"rgba(255,180,0,.06)", border:"1px solid rgba(255,180,0,.15)", borderRadius:12 }}>
+                        <div style={{ fontSize:9, color:"#666", textTransform:"uppercase", letterSpacing:".08em", marginBottom:4 }}>All Time</div>
+                        <div style={{ fontFamily:"Bebas Neue", fontSize:22, color:"#ffb400" }}>{fmt(allTimeWithdrawn)}</div>
+                      </div>
+                    </div>
+                    {monthWithdrawals.length > 0 && (
+                      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                        {monthWithdrawals.map(w => (
+                          <div key={w.id} style={{ display:"grid", gridTemplateColumns:"1fr auto auto", gap:12, alignItems:"center", padding:"10px 14px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:10 }}>
+                            <div>
+                              <div style={{ fontSize:12, fontWeight:500, color:"#fff" }}>{w.description || "Withdrawal"}</div>
+                              <div style={{ fontSize:10, color:"#555" }}>{w.expense_date}</div>
+                            </div>
+                            <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ffb400" }}>{fmt(w.amount)}</div>
+                            <button onClick={async ()=>{ if(confirm("Delete this withdrawal?")) await supabase.from("expenses").delete().eq("id",w.id); }} style={{ padding:"4px 8px", background:"rgba(255,180,0,.1)", border:"1px solid rgba(255,180,0,.2)", borderRadius:6, color:"#ffb400", fontSize:10, cursor:"pointer" }}>✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* Add Expense */}
