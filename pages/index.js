@@ -115,7 +115,7 @@ function AdminDashboard({ onLogout }) {
   const [addSuccess, setAddSuccess] = useState(false);
   const [orderSuccess, setOrderSuccess] = useState(false);
   const [newProduct, setNewProduct] = useState({ name:"", type:"T-Shirts", gender:"MEN", sizes:["M"], fit:"Oversized", mrp:"", price:"", tag:"HOT DROP", images:[], stock:0 });
-  const [newOrder, setNewOrder] = useState({ customer:"", product:"", gender:"MEN", qty:1, amount:"", status:"Pending" });
+  const [newOrder, setNewOrder] = useState({ customer:"", phone:"", product:"", gender:"MEN", qty:1, amount:"", status:"Pending" });
 
   // Sale capture state
   const [saleProduct, setSaleProduct] = useState(null);
@@ -125,12 +125,14 @@ function AdminDashboard({ onLogout }) {
   const [saleChannel, setSaleChannel] = useState("Store");
   const [saleShipping, setSaleShipping] = useState("");
   const [saleCustomer, setSaleCustomer] = useState("");
+  const [salePhone, setSalePhone] = useState("");
   const [saleSuccess, setSaleSuccess] = useState(false);
   const [saleSearch, setSaleSearch] = useState("");
   const [saleTypeFilter, setSaleTypeFilter] = useState("All");
+  const [saleGenderFilter, setSaleGenderFilter] = useState("All");
 
   // Expense state
-  const [newExpense, setNewExpense] = useState({ category:"Inventory Purchase", description:"", amount:"", expense_date: new Date().toISOString().slice(0,10) });
+  const [newExpense, setNewExpense] = useState({ category:"Inventory Purchase", description:"", amount:"", shipping:"", expense_date: new Date().toISOString().slice(0,10) });
   const [expenseSuccess, setExpenseSuccess] = useState(false);
   const [booksMonth, setBooksMonth] = useState(new Date().toISOString().slice(0,7));
 
@@ -169,6 +171,7 @@ function AdminDashboard({ onLogout }) {
     setSaleChannel("Store");
     setSaleShipping("");
     setSaleCustomer("");
+    setSalePhone("");
   }
 
   async function handleRecordSale(e) {
@@ -186,8 +189,20 @@ function AdminDashboard({ onLogout }) {
       channel: saleChannel,
       shipping_cost: +saleShipping || 0,
       customer_name: saleCustomer || null,
+      customer_phone: salePhone || null,
     }]);
     if (error) { alert("Error: " + error.message); return; }
+
+    // Also create an order entry
+    await supabase.from("orders").insert([{
+      customer: saleCustomer || "Walk-in",
+      phone: salePhone || null,
+      product: `${saleProduct.name} (${saleSize})`,
+      gender: saleProduct.gender,
+      qty: saleQty,
+      amount: total + (+saleShipping || 0),
+      status: saleChannel === "Store" ? "Delivered" : "Pending",
+    }]);
 
     // Decrement stock_by_size
     const currentStock = saleProduct.stock_by_size || {};
@@ -254,7 +269,7 @@ function AdminDashboard({ onLogout }) {
     if (!newOrder.customer||!newOrder.product||!newOrder.amount) return;
     const { error } = await supabase.from("orders").insert([{ ...newOrder, qty:+newOrder.qty, amount:+newOrder.amount }]);
     if (error) { alert("Error: "+error.message); return; }
-    setNewOrder({ customer:"", product:"", gender:"MEN", qty:1, amount:"", status:"Pending" });
+    setNewOrder({ customer:"", phone:"", product:"", gender:"MEN", qty:1, amount:"", status:"Pending" });
     setOrderSuccess(true); setTimeout(()=>setOrderSuccess(false),2500);
   }
 
@@ -266,14 +281,14 @@ function AdminDashboard({ onLogout }) {
   async function handleAddExpense(e) {
     e.preventDefault();
     if (!newExpense.amount) return;
-    const { error } = await supabase.from("expenses").insert([{
-      category: newExpense.category,
-      description: newExpense.description || null,
-      amount: +newExpense.amount,
-      expense_date: newExpense.expense_date,
-    }]);
+    const shippingAmt = newExpense.category === "Inventory Purchase" ? (+newExpense.shipping || 0) : 0;
+    const rows = [{ category: newExpense.category, description: newExpense.description || null, amount: +newExpense.amount, expense_date: newExpense.expense_date }];
+    if (shippingAmt > 0) {
+      rows.push({ category: "Shipping", description: `Shipping for: ${newExpense.description || "Inventory Purchase"}`, amount: shippingAmt, expense_date: newExpense.expense_date });
+    }
+    const { error } = await supabase.from("expenses").insert(rows);
     if (error) { alert("Error: " + error.message); return; }
-    setNewExpense({ category:"Inventory Purchase", description:"", amount:"", expense_date: new Date().toISOString().slice(0,10) });
+    setNewExpense({ category:"Inventory Purchase", description:"", amount:"", shipping:"", expense_date: new Date().toISOString().slice(0,10) });
     setExpenseSuccess(true); setTimeout(() => setExpenseSuccess(false), 2500);
   }
 
@@ -311,6 +326,7 @@ function AdminDashboard({ onLogout }) {
 
   const saleTypeOptions = ["All", ...new Set(products.map(p => p.type).filter(Boolean))];
   const filteredProducts = products.filter(p => {
+    if (saleGenderFilter !== "All" && p.gender !== saleGenderFilter) return false;
     if (saleTypeFilter !== "All" && p.type !== saleTypeFilter) return false;
     if (saleSearch && !p.name.toLowerCase().includes(saleSearch.toLowerCase())) return false;
     return true;
@@ -371,17 +387,29 @@ function AdminDashboard({ onLogout }) {
               <>
                 {/* Product search */}
                 <div style={{ fontFamily:"Bebas Neue", fontSize:22, color:"#fff", marginBottom:4 }}>QUICK SALE</div>
-                <div style={{ fontSize:12, color:"#555", marginBottom:16 }}>Tap a product to record a sale</div>
+                <div style={{ fontSize:12, color:"#555", marginBottom:12 }}>Tap a product to record a sale</div>
 
-                {/* Type filter + Search */}
+                {/* Gender filter */}
+                <div style={{ display:"flex", gap:6, marginBottom:10 }}>
+                  {["All","MEN","WOMEN","KIDS","UNISEX"].map(g => (
+                    <button key={g} type="button" onClick={()=>setSaleGenderFilter(g)} style={{
+                      padding:"7px 16px", borderRadius:9, cursor:"pointer", fontWeight:700, fontSize:12, letterSpacing:".04em",
+                      background: saleGenderFilter===g ? "linear-gradient(135deg,#a06aff,#ff3c64)" : "rgba(255,255,255,.04)",
+                      border: saleGenderFilter===g ? "1px solid transparent" : "1px solid rgba(255,255,255,.08)",
+                      color: saleGenderFilter===g ? "#fff" : "#666",
+                    }}>{g === "All" ? "All" : g.charAt(0) + g.slice(1).toLowerCase()}</button>
+                  ))}
+                </div>
+
+                {/* Type filter */}
                 <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
                   {saleTypeOptions.map(t => (
                     <button key={t} type="button" onClick={()=>setSaleTypeFilter(t)} style={{
-                      padding:"6px 14px", borderRadius:9, cursor:"pointer", fontWeight:600, fontSize:11,
-                      background: saleTypeFilter===t ? "linear-gradient(135deg,#a06aff,#ff3c64)" : "rgba(255,255,255,.04)",
-                      border: saleTypeFilter===t ? "1px solid transparent" : "1px solid rgba(255,255,255,.08)",
-                      color: saleTypeFilter===t ? "#fff" : "#666", whiteSpace:"nowrap",
-                    }}>{t}{t !== "All" ? ` (${products.filter(p=>p.type===t).length})` : ""}</button>
+                      padding:"5px 12px", borderRadius:8, cursor:"pointer", fontWeight:600, fontSize:10,
+                      background: saleTypeFilter===t ? "rgba(160,106,255,.2)" : "rgba(255,255,255,.03)",
+                      border: saleTypeFilter===t ? "1px solid rgba(160,106,255,.4)" : "1px solid rgba(255,255,255,.06)",
+                      color: saleTypeFilter===t ? "#c084fc" : "#555", whiteSpace:"nowrap",
+                    }}>{t}{t !== "All" ? ` (${products.filter(p=> (saleGenderFilter==="All" || p.gender===saleGenderFilter) && p.type===t).length})` : ""}</button>
                   ))}
                 </div>
                 <input className="form-field" type="text" placeholder="Search by name…" value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} style={{ marginBottom:16, maxWidth:360 }} />
@@ -484,10 +512,16 @@ function AdminDashboard({ onLogout }) {
                       <input className="form-field" type="number" placeholder="0" value={saleShipping} onChange={e=>setSaleShipping(e.target.value)} />
                     </div>
 
-                    {/* Customer (optional) */}
-                    <div style={{ marginBottom:18 }}>
-                      <label className="form-label">Customer Name (optional)</label>
-                      <input className="form-field" type="text" placeholder="Walk-in / Customer name" value={saleCustomer} onChange={e=>setSaleCustomer(e.target.value)} />
+                    {/* Customer details (optional) */}
+                    <div className="admin-form-grid" style={{ marginBottom:18 }}>
+                      <div>
+                        <label className="form-label">Customer Name</label>
+                        <input className="form-field" type="text" placeholder="Walk-in / Customer name" value={saleCustomer} onChange={e=>setSaleCustomer(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="form-label">Phone</label>
+                        <input className="form-field" type="tel" placeholder="9876543210" value={salePhone} onChange={e=>setSalePhone(e.target.value)} />
+                      </div>
                     </div>
 
                     {/* Total */}
@@ -521,8 +555,8 @@ function AdminDashboard({ onLogout }) {
                     <div key={s.id} style={{ display:"grid", gridTemplateColumns:"40px 1fr auto auto auto", gap:12, alignItems:"center", padding:"10px 14px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:12 }}>
                       <img src={s.product_image} alt="" style={{ width:40, height:40, objectFit:"cover", borderRadius:8 }} onError={e=>{e.target.style.display="none";}} />
                       <div>
-                        <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{s.product_name}</div>
-                        <div style={{ fontSize:10, color:"#555" }}>Size {s.size} · Qty {s.quantity} · {s.channel}{s.shipping_cost > 0 ? ` · Ship ${fmt(s.shipping_cost)}` : ""}</div>
+                        <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{s.product_name}{s.customer_name ? ` — ${s.customer_name}` : ""}</div>
+                        <div style={{ fontSize:10, color:"#555" }}>Size {s.size} · Qty {s.quantity} · {s.channel}{s.shipping_cost > 0 ? ` · Ship ${fmt(s.shipping_cost)}` : ""}{s.customer_phone ? ` · ${s.customer_phone}` : ""}</div>
                       </div>
                       <div style={{ fontSize:9, padding:"3px 8px", borderRadius:6, fontWeight:600, background: s.channel==="Store" ? "rgba(160,106,255,.12)" : "rgba(0,212,150,.12)", color: s.channel==="Store" ? "#a06aff" : "#00d496" }}>{s.channel}</div>
                       <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#a06aff" }}>{fmt(s.total_amount)}</div>
@@ -656,9 +690,15 @@ function AdminDashboard({ onLogout }) {
                     </select>
                   </div>
                   <div><label className="form-label">Amount (₹)</label><input className="form-field" type="number" placeholder="5000" value={newExpense.amount} onChange={e=>setNewExpense(x=>({...x,amount:e.target.value}))} /></div>
+                  {newExpense.category === "Inventory Purchase" && (
+                    <div><label className="form-label">Shipping (₹)</label><input className="form-field" type="number" placeholder="150" value={newExpense.shipping} onChange={e=>setNewExpense(x=>({...x,shipping:e.target.value}))} /></div>
+                  )}
                   <div><label className="form-label">Date</label><input className="form-field" type="date" value={newExpense.expense_date} onChange={e=>setNewExpense(x=>({...x,expense_date:e.target.value}))} /></div>
                   <div><label className="form-label">Description</label><input className="form-field" type="text" placeholder="Bought T-shirts from supplier" value={newExpense.description} onChange={e=>setNewExpense(x=>({...x,description:e.target.value}))} /></div>
                 </div>
+                {newExpense.category === "Inventory Purchase" && (+newExpense.shipping || 0) > 0 && (
+                  <div style={{ fontSize:11, color:"#888", marginBottom:10 }}>Total: {fmt((+newExpense.amount||0) + (+newExpense.shipping||0))} (Item: {fmt(+newExpense.amount||0)} + Shipping: {fmt(+newExpense.shipping||0)})</div>
+                )}
                 <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
                   <button type="submit" className="submit-btn">Add Expense →</button>
                   {expenseSuccess && <div className="success-badge">✓ Expense saved!</div>}
@@ -732,7 +772,7 @@ function AdminDashboard({ onLogout }) {
               <div style={{ fontFamily:"Bebas Neue", fontSize:17, color:"#a06aff", marginBottom:16 }}>ADD MANUAL ORDER</div>
               <form onSubmit={handleAddOrder}>
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:12, marginBottom:14 }}>
-                  {[["Customer Name","customer","text","Arjun Sharma"],["Product","product","text","Product name"],["Quantity","qty","number","1"],["Amount (₹)","amount","number","599"]].map(([l,k,t,ph]) => (
+                  {[["Customer Name","customer","text","Arjun Sharma"],["Phone","phone","tel","9876543210"],["Product","product","text","Product name"],["Quantity","qty","number","1"],["Amount (₹)","amount","number","599"]].map(([l,k,t,ph]) => (
                     <div key={k}><label className="form-label">{l}</label><input className="form-field" type={t} placeholder={ph} value={newOrder[k]} onChange={e=>setNewOrder(o=>({...o,[k]:e.target.value}))} /></div>
                   ))}
                   <div><label className="form-label">Gender</label><select className="form-field" value={newOrder.gender} onChange={e=>setNewOrder(o=>({...o,gender:e.target.value}))}>{["MEN","WOMEN","KIDS","UNISEX"].map(g=><option key={g}>{g}</option>)}</select></div>
@@ -747,7 +787,7 @@ function AdminDashboard({ onLogout }) {
             <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
               {orders.map(o => (
                 <div key={o.id} style={{ padding:"16px 18px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:15, display:"grid", gridTemplateColumns:"1fr auto auto", gap:14, alignItems:"center" }}>
-                  <div><div style={{ fontSize:13, fontWeight:600, color:"#fff" }}>{o.customer}</div><div style={{ fontSize:11, color:"#555", marginTop:2 }}>{o.product} · {o.gender} · Qty {o.qty}</div></div>
+                  <div><div style={{ fontSize:13, fontWeight:600, color:"#fff" }}>{o.customer}{o.phone ? ` · ${o.phone}` : ""}</div><div style={{ fontSize:11, color:"#555", marginTop:2 }}>{o.product} · {o.gender} · Qty {o.qty}</div></div>
                   <div style={{ fontFamily:"Bebas Neue", fontSize:20, color:"#a06aff" }}>{fmt(o.amount)}</div>
                   <select className="status-sel" value={o.status} onChange={e=>updateOrderStatus(o.id,e.target.value)} style={{ background:STATUS_COLORS[o.status]?.bg, color:STATUS_COLORS[o.status]?.color, borderColor:`${STATUS_COLORS[o.status]?.color}44` }}>
                     {["Pending","Packed","Shipped","Delivered","Cancelled"].map(s=><option key={s} style={{background:"#1a1a1a",color:"#ccc"}}>{s}</option>)}
