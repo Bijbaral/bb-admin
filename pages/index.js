@@ -1007,24 +1007,6 @@ function AdminDashboard({ onLogout }) {
               {monthExpenses.length === 0 && <div style={{ fontSize:13, color:"#444", padding:20, textAlign:"center" }}>No expenses for {booksMonth}</div>}
             </div>
 
-            {/* Sales log for the month */}
-            {monthSales.length > 0 && (
-              <div style={{ marginTop:28 }}>
-                <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#fff", marginBottom:12 }}>SALES LOG ({monthSales.length} sales)</div>
-                <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                  {monthSales.slice(0, 20).map(s => (
-                    <div key={s.id} style={{ display:"grid", gridTemplateColumns:"1fr auto auto", gap:12, alignItems:"center", padding:"10px 14px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:12 }}>
-                      <div>
-                        <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{s.product_name}</div>
-                        <div style={{ fontSize:10, color:"#555" }}>Size {s.size} · Qty {s.quantity} · {s.channel}{s.shipping_cost > 0 ? ` · Ship ${fmt(s.shipping_cost)}` : ""}{s.customer_name ? ` · ${s.customer_name}` : ""}</div>
-                      </div>
-                      <div style={{ fontSize:9, padding:"3px 8px", borderRadius:6, fontWeight:600, background: s.channel==="Store" ? "rgba(160,106,255,.12)" : "rgba(0,212,150,.12)", color: s.channel==="Store" ? "#a06aff" : "#00d496" }}>{s.channel}</div>
-                      <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#00d496" }}>{fmt(s.total_amount)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
