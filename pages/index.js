@@ -308,9 +308,10 @@ function AdminDashboard({ onLogout }) {
   }
 
   async function handleDeleteOrder(id) {
-    if (!confirm("Delete this order?")) return;
-    const { error } = await supabase.from("orders").delete().eq("id", id);
+    if (!confirm("Delete this order? (ID: " + id + ")")) return;
+    const { data, error } = await supabase.from("orders").delete().eq("id", id).select();
     if (error) return alert("Delete failed: " + error.message);
+    if (!data || data.length === 0) return alert("Delete returned no error but no rows were removed. ID: " + id);
     setOrders(prev => prev.filter(o => o.id !== id));
   }
 
