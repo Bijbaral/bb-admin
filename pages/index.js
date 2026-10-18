@@ -153,6 +153,9 @@ function AdminDashboard({ onLogout }) {
   const [saleRecording, setSaleRecording] = useState(false);
   const [saleError, setSaleError] = useState("");
 
+  // Inline delete confirmation
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
   useEffect(() => {
     async function load() {
       const [{ data: prods }, { data: sls }, { data: exps }, { data: ords }, { data: hero }] = await Promise.all([
@@ -296,11 +299,11 @@ function AdminDashboard({ onLogout }) {
     setEditingProduct(null);
   }
 
-  async function handleDeleteProduct(id) {
-    if (!confirm("Delete this product permanently?")) return;
+  async function executeDeleteProduct(id) {
     const { error } = await supabase.from("products").delete().eq("id", id);
     if (error) return alert("Delete failed: " + error.message);
     setProducts(prev => prev.filter(p => p.id !== id));
+    setConfirmDelete(null);
   }
 
   /* ── Orders ── */
@@ -310,16 +313,19 @@ function AdminDashboard({ onLogout }) {
     setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
   }
 
-  async function handleDeleteOrder(id) {
-    try {
-      if (!confirm("Delete this order? (ID: " + id + ")")) return;
-      const res = await supabase.from("orders").delete().eq("id", id).select();
-      if (res.error) return alert("Delete error: " + JSON.stringify(res.error));
-      alert("Deleted " + (res.data?.length || 0) + " row(s) for ID " + id);
-      setOrders(prev => prev.filter(o => o.id !== id));
-    } catch (e) {
-      alert("JS error: " + e.message);
+  async function executeDeleteOrder(id) {
+    const order = orders.find(o => o.id === id);
+    const { error } = await supabase.from("orders").delete().eq("id", id);
+    if (error) return alert("Delete failed: " + error.message);
+    setOrders(prev => prev.filter(o => o.id !== id));
+    if (order) {
+      const matchSale = sales.find(s => `${s.product_name} (${s.size})` === order.product && +s.total_amount === +order.amount);
+      if (matchSale) {
+        await supabase.from("sales").delete().eq("id", matchSale.id);
+        setSales(prev => prev.filter(s => s.id !== matchSale.id));
+      }
     }
+    setConfirmDelete(null);
   }
 
   /* ── Expenses ── */
@@ -337,29 +343,22 @@ function AdminDashboard({ onLogout }) {
     setExpenseSuccess(true); setTimeout(() => setExpenseSuccess(false), 2500);
   }
 
-  async function handleDeleteExpense(id) {
-    if (!confirm("Delete this expense?")) return;
+  async function executeDeleteExpense(id) {
     const { error } = await supabase.from("expenses").delete().eq("id", id);
     if (error) return alert("Delete failed: " + error.message);
     setExpenses(prev => prev.filter(e => e.id !== id));
+    setConfirmDelete(null);
   }
 
-  async function handleDeleteSale(sale) {
-    try {
-    if (!confirm("Delete this sale? (ID: " + sale.id + ")")) return;
-    // Restore stock
+  async function executeDeleteSale(sale) {
     if (sale.product_id) {
       const prod = products.find(p => p.id === sale.product_id);
       if (prod) {
         const sbs = { ...(prod.stock_by_size || {}) };
         if (sale.size && sbs[sale.size] !== undefined) sbs[sale.size] = (sbs[sale.size] || 0) + sale.quantity;
-        await supabase.from("products").update({
-          stock_by_size: sbs,
-          stock: Math.max(0, (prod.stock || 0) + sale.quantity),
-        }).eq("id", sale.product_id);
+        await supabase.from("products").update({ stock_by_size: sbs, stock: Math.max(0, (prod.stock || 0) + sale.quantity) }).eq("id", sale.product_id);
       }
     }
-    // Remove matching auto-created order
     const orderProduct = `${sale.product_name} (${sale.size})`;
     const { data: matchingOrders } = await supabase.from("orders").select("id").eq("product", orderProduct).eq("qty", sale.quantity).limit(1);
     if (matchingOrders?.length) {
@@ -368,9 +367,8 @@ function AdminDashboard({ onLogout }) {
     }
     const { error } = await supabase.from("sales").delete().eq("id", sale.id);
     if (error) return alert("Sale delete failed: " + error.message);
-    alert("Sale " + sale.id + " deleted successfully");
     setSales(prev => prev.filter(s => s.id !== sale.id));
-    } catch (e) { alert("JS error in sale delete: " + e.message); }
+    setConfirmDelete(null);
   }
 
   async function setHero(url) {
@@ -685,7 +683,7 @@ function AdminDashboard({ onLogout }) {
                           </div>
                           <div style={{ fontSize:9, padding:"3px 8px", borderRadius:6, fontWeight:600, background: s.channel==="Store" ? "rgba(160,106,255,.12)" : "rgba(0,212,150,.12)", color: s.channel==="Store" ? "#a06aff" : "#00d496" }}>{s.channel}</div>
                           <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#a06aff" }}>{fmt(s.total_amount)}</div>
-                          <button onClick={()=>handleDeleteSale(s)} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
+                          <button onClick={()=>setConfirmDelete({type:"sale",id:s.id,label:s.product_name,sale:s})} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
                         </div>
                         {matchedOrder && (
                           <div style={{ marginTop:8, paddingTop:8, borderTop:"1px solid rgba(255,255,255,.05)", display:"flex", alignItems:"center", gap:10 }}>
@@ -780,7 +778,7 @@ function AdminDashboard({ onLogout }) {
                     </div>
                     <div style={{ textAlign:"right" }}><div style={{ fontSize:14, fontWeight:600, color:"#a06aff" }}>{fmt(p.price)}</div><div style={{ fontSize:9, color:"#444" }}>{fmt(p.mrp)} MRP</div></div>
                     <button onClick={()=>setEditingProduct({...p, images: p.images?.length ? p.images : [p.image], sizes: (p.sizes && p.sizes.length) ? p.sizes : (p.size ? [p.size] : []), stock_by_size: p.stock_by_size || {}})} style={{ padding:"5px 12px", background:"rgba(160,106,255,.14)", border:"1px solid rgba(160,106,255,.3)", borderRadius:8, color:"#c084fc", fontSize:11, fontWeight:600, cursor:"pointer" }}>Edit</button>
-                    <button onClick={()=>handleDeleteProduct(p.id)} style={{ padding:"5px 12px", background:"rgba(255,60,100,.12)", border:"1px solid rgba(255,60,100,.3)", borderRadius:8, color:"#ff3c64", fontSize:11, fontWeight:600, cursor:"pointer" }}>Delete</button>
+                    <button onClick={()=>setConfirmDelete({type:"product",id:p.id,label:p.name})} style={{ padding:"5px 12px", background:"rgba(255,60,100,.12)", border:"1px solid rgba(255,60,100,.3)", borderRadius:8, color:"#ff3c64", fontSize:11, fontWeight:600, cursor:"pointer" }}>Delete</button>
                   </div>
                 );
               })}
@@ -939,7 +937,7 @@ function AdminDashboard({ onLogout }) {
                               <div style={{ fontSize:10, color:"#555" }}>{w.expense_date}</div>
                             </div>
                             <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ffb400" }}>{fmt(w.amount)}</div>
-                            <button onClick={async ()=>{ if(!confirm("Delete this withdrawal?")) return; const{error}=await supabase.from("expenses").delete().eq("id",w.id); if(error) return alert("Delete failed: "+error.message); setExpenses(prev=>prev.filter(e=>e.id!==w.id)); }} style={{ padding:"4px 8px", background:"rgba(255,180,0,.1)", border:"1px solid rgba(255,180,0,.2)", borderRadius:6, color:"#ffb400", fontSize:10, cursor:"pointer" }}>✕</button>
+                            <button onClick={()=>setConfirmDelete({type:"expense",id:w.id,label:w.description||"Withdrawal"})} style={{ padding:"4px 8px", background:"rgba(255,180,0,.1)", border:"1px solid rgba(255,180,0,.2)", borderRadius:6, color:"#ffb400", fontSize:10, cursor:"pointer" }}>✕</button>
                           </div>
                         ))}
                       </div>
@@ -1009,7 +1007,7 @@ function AdminDashboard({ onLogout }) {
                     <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{e.category} · {e.expense_date}</div>
                   </div>
                   <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ff3c64" }}>{fmt(e.amount)}</div>
-                  <button onClick={()=>handleDeleteExpense(e.id)} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
+                  <button onClick={()=>setConfirmDelete({type:"expense",id:e.id,label:e.description||e.category})} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
                 </div>
               ))}
               {monthExpenses.length === 0 && <div style={{ fontSize:13, color:"#444", padding:20, textAlign:"center" }}>No expenses for {booksMonth}</div>}
@@ -1045,10 +1043,34 @@ function AdminDashboard({ onLogout }) {
                   <select className="status-sel" value={o.status} onChange={e=>updateOrderStatus(o.id,e.target.value)} style={{ background:STATUS_COLORS[o.status]?.bg, color:STATUS_COLORS[o.status]?.color, borderColor:`${STATUS_COLORS[o.status]?.color}44` }}>
                     {["Pending","Packed","Shipped","Delivered","Cancelled"].map(s=><option key={s} style={{background:"#1a1a1a",color:"#ccc"}}>{s}</option>)}
                   </select>
-                  <button onClick={()=>handleDeleteOrder(o.id)} style={{ padding:"5px 10px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:7, color:"#ff3c64", fontSize:10, fontWeight:600, cursor:"pointer" }}>Delete</button>
+                  <button onClick={()=>setConfirmDelete({type:"order",id:o.id,label:o.product})} style={{ padding:"5px 10px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:7, color:"#ff3c64", fontSize:10, fontWeight:600, cursor:"pointer" }}>Delete</button>
                 </div>
               ))}
               {filteredOrders.length === 0 && <div style={{ fontSize:13, color:"#444", padding:20, textAlign:"center" }}>{orderSearch || orderStatusFilter !== "All" ? "No matching orders." : "No orders yet."}</div>}
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════ DELETE CONFIRMATION ═══════════ */}
+        {confirmDelete && (
+          <div className="modal-backdrop" onClick={()=>setConfirmDelete(null)}>
+            <div className="modal-box" onClick={e=>e.stopPropagation()} style={{ maxWidth:380, textAlign:"center", padding:"32px 28px" }}>
+              <div style={{ fontSize:36, marginBottom:12 }}>🗑️</div>
+              <div style={{ fontFamily:"Bebas Neue", fontSize:20, color:"#fff", marginBottom:8 }}>DELETE {confirmDelete.type.toUpperCase()}?</div>
+              <div style={{ fontSize:13, color:"#888", marginBottom:6 }}>{confirmDelete.label}</div>
+              {(confirmDelete.type === "order" || confirmDelete.type === "sale") && (
+                <div style={{ fontSize:11, color:"#a06aff", marginBottom:6 }}>Matching {confirmDelete.type === "order" ? "sale" : "order"} will also be removed</div>
+              )}
+              {confirmDelete.type === "sale" && <div style={{ fontSize:11, color:"#00d496", marginBottom:6 }}>Stock will be restored</div>}
+              <div style={{ display:"flex", gap:10, justifyContent:"center", marginTop:20 }}>
+                <button onClick={()=>setConfirmDelete(null)} style={{ padding:"10px 24px", background:"rgba(255,255,255,.06)", border:"1px solid rgba(255,255,255,.1)", borderRadius:10, color:"#888", fontSize:13, fontWeight:600, cursor:"pointer" }}>Cancel</button>
+                <button onClick={()=>{
+                  if (confirmDelete.type === "order") executeDeleteOrder(confirmDelete.id);
+                  else if (confirmDelete.type === "sale") executeDeleteSale(confirmDelete.sale);
+                  else if (confirmDelete.type === "product") executeDeleteProduct(confirmDelete.id);
+                  else if (confirmDelete.type === "expense") executeDeleteExpense(confirmDelete.id);
+                }} style={{ padding:"10px 24px", background:"rgba(255,60,100,.15)", border:"1px solid rgba(255,60,100,.3)", borderRadius:10, color:"#ff3c64", fontSize:13, fontWeight:600, cursor:"pointer" }}>Delete</button>
+              </div>
             </div>
           </div>
         )}
