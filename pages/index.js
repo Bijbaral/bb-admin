@@ -146,9 +146,14 @@ function AdminDashboard({ onLogout }) {
   // Timeline collapsible
   const [timelineOpen, setTimelineOpen] = useState(false);
 
-  // Withdrawal state
+  // Withdrawal state (collapsible)
+  const [withdrawalOpen, setWithdrawalOpen] = useState(false);
   const [newWithdrawal, setNewWithdrawal] = useState({ amount:"", description:"", date: new Date().toISOString().slice(0,10) });
   const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
+
+  // Sale recording state
+  const [saleRecording, setSaleRecording] = useState(false);
+  const [saleError, setSaleError] = useState("");
 
   useEffect(() => {
     async function load() {
@@ -190,53 +195,65 @@ function AdminDashboard({ onLogout }) {
 
   async function handleRecordSale(e) {
     e.preventDefault();
-    if (!saleProduct || !saleSize || !salePrice) return;
-    const total = (+salePrice) * saleQty;
-    const { error } = await supabase.from("sales").insert([{
-      product_id: saleProduct.id,
-      product_name: saleProduct.name,
-      product_image: saleProduct.image,
-      size: saleSize,
-      quantity: saleQty,
-      unit_price: +salePrice,
-      total_amount: total,
-      channel: saleChannel,
-      shipping_cost: +saleShipping || 0,
-      customer_name: saleCustomer || null,
-      customer_phone: salePhone || null,
-    }]);
-    if (error) { alert("Error: " + error.message); return; }
+    setSaleError("");
+    if (!saleProduct || !saleSize || !salePrice) {
+      setSaleError(!saleSize ? "Please select a size" : "Missing required fields");
+      return;
+    }
+    setSaleRecording(true);
+    try {
+      const total = (+salePrice) * saleQty;
+      const { error } = await supabase.from("sales").insert([{
+        product_id: saleProduct.id,
+        product_name: saleProduct.name,
+        product_image: saleProduct.image,
+        size: saleSize,
+        quantity: saleQty,
+        unit_price: +salePrice,
+        total_amount: total,
+        channel: saleChannel,
+        shipping_cost: +saleShipping || 0,
+        customer_name: saleCustomer || null,
+        customer_phone: salePhone || null,
+      }]);
+      if (error) { setSaleError("Sale failed: " + error.message); setSaleRecording(false); return; }
 
-    // Also create an order entry
-    await supabase.from("orders").insert([{
-      customer: saleCustomer || "Walk-in",
-      phone: salePhone || null,
-      product: `${saleProduct.name} (${saleSize})`,
-      gender: saleProduct.gender,
-      qty: saleQty,
-      amount: total,
-      status: saleChannel === "Store" ? "Delivered" : "Pending",
-    }]);
+      // Also create an order entry
+      const { error: orderErr } = await supabase.from("orders").insert([{
+        customer: saleCustomer || "Walk-in",
+        phone: salePhone || null,
+        product: `${saleProduct.name} (${saleSize})`,
+        gender: saleProduct.gender,
+        qty: saleQty,
+        amount: total,
+        status: saleChannel === "Store" ? "Delivered" : "Pending",
+      }]);
+      if (orderErr) console.warn("Order entry failed:", orderErr.message);
 
-    // Decrement stock_by_size
-    const currentStock = saleProduct.stock_by_size || {};
-    const newStockVal = Math.max(0, (currentStock[saleSize] || 0) - saleQty);
-    await supabase.from("products").update({
-      stock_by_size: { ...currentStock, [saleSize]: newStockVal },
-      stock: Math.max(0, (saleProduct.stock || 0) - saleQty),
-    }).eq("id", saleProduct.id);
+      // Decrement stock_by_size
+      const currentStock = saleProduct.stock_by_size || {};
+      const newStockVal = Math.max(0, (currentStock[saleSize] || 0) - saleQty);
+      await supabase.from("products").update({
+        stock_by_size: { ...currentStock, [saleSize]: newStockVal },
+        stock: Math.max(0, (saleProduct.stock || 0) - saleQty),
+      }).eq("id", saleProduct.id);
 
-    setSaleProduct(null);
-    setSaleSize("");
-    setSalePrice("");
-    setSaleQty(1);
-    setSaleChannel("Store");
-    setSaleShipping("");
-    setSaleCustomer("");
-    setSalePhone("");
-    setSaleSuccess(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    setTimeout(() => setSaleSuccess(false), 4000);
+      setSaleProduct(null);
+      setSaleSize("");
+      setSalePrice("");
+      setSaleQty(1);
+      setSaleChannel("Store");
+      setSaleShipping("");
+      setSaleCustomer("");
+      setSalePhone("");
+      setSaleSuccess(true);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      setTimeout(() => setSaleSuccess(false), 4000);
+    } catch (err) {
+      setSaleError("Unexpected error: " + err.message);
+    } finally {
+      setSaleRecording(false);
+    }
   }
 
   /* ── Products ── */
@@ -469,56 +486,70 @@ function AdminDashboard({ onLogout }) {
                 <div style={{ fontFamily:"Bebas Neue", fontSize:22, color:"#fff", marginBottom:4 }}>QUICK SALE</div>
                 <div style={{ fontSize:12, color:"#555", marginBottom:12 }}>Tap a product to record a sale</div>
 
-                {/* Gender filter */}
-                <div style={{ display:"flex", gap:6, marginBottom:10 }}>
-                  {["All","MEN","WOMEN","KIDS","UNISEX"].map(g => (
-                    <button key={g} type="button" onClick={()=>setSaleGenderFilter(g)} style={{
-                      padding:"7px 16px", borderRadius:9, cursor:"pointer", fontWeight:700, fontSize:12, letterSpacing:".04em",
-                      background: saleGenderFilter===g ? "linear-gradient(135deg,#a06aff,#ff3c64)" : "rgba(255,255,255,.04)",
-                      border: saleGenderFilter===g ? "1px solid transparent" : "1px solid rgba(255,255,255,.08)",
-                      color: saleGenderFilter===g ? "#fff" : "#666",
-                    }}>{g === "All" ? "All" : g.charAt(0) + g.slice(1).toLowerCase()}</button>
-                  ))}
-                </div>
+                {/* Sidebar layout: filters left, products right */}
+                <div className="sale-layout" style={{ display:"flex", gap:16, alignItems:"flex-start" }}>
+                  {/* Left sidebar — filters */}
+                  <div className="sale-sidebar" style={{ width:170, flexShrink:0, position:"sticky", top:90, display:"flex", flexDirection:"column", gap:12 }}>
+                    {/* Gender tabs (vertical) */}
+                    <div style={{ background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:14, overflow:"hidden" }}>
+                      {["All","MEN","WOMEN","KIDS","UNISEX"].map(g => (
+                        <button key={g} type="button" onClick={()=>{setSaleGenderFilter(g);setSaleTypeFilter("All");}} style={{
+                          display:"block", width:"100%", padding:"11px 14px", cursor:"pointer", fontWeight:600, fontSize:12, letterSpacing:".03em", textAlign:"left",
+                          background: saleGenderFilter===g ? "linear-gradient(135deg,rgba(160,106,255,.2),rgba(255,60,100,.12))" : "transparent",
+                          border:"none", borderBottom:"1px solid rgba(255,255,255,.04)",
+                          borderLeft: saleGenderFilter===g ? "3px solid #a06aff" : "3px solid transparent",
+                          color: saleGenderFilter===g ? "#c084fc" : "#666", transition:"all .15s",
+                        }}>{g === "All" ? "All Genders" : g.charAt(0) + g.slice(1).toLowerCase()}</button>
+                      ))}
+                    </div>
 
-                {/* Type filter */}
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
-                  {saleTypeOptions.map(t => (
-                    <button key={t} type="button" onClick={()=>setSaleTypeFilter(t)} style={{
-                      padding:"5px 12px", borderRadius:8, cursor:"pointer", fontWeight:600, fontSize:10,
-                      background: saleTypeFilter===t ? "rgba(160,106,255,.2)" : "rgba(255,255,255,.03)",
-                      border: saleTypeFilter===t ? "1px solid rgba(160,106,255,.4)" : "1px solid rgba(255,255,255,.06)",
-                      color: saleTypeFilter===t ? "#c084fc" : "#555", whiteSpace:"nowrap",
-                    }}>{t}{t !== "All" ? ` (${products.filter(p=> (saleGenderFilter==="All" || p.gender===saleGenderFilter) && p.type===t).length})` : ""}</button>
-                  ))}
-                </div>
-                <input className="form-field" type="text" placeholder="Search by name…" value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} style={{ marginBottom:16, maxWidth:360 }} />
+                    {/* Category dropdown */}
+                    <div>
+                      <label style={{ fontSize:9, color:"#555", textTransform:"uppercase", letterSpacing:".1em", marginBottom:5, display:"block" }}>Category</label>
+                      <select className="form-field" value={saleTypeFilter} onChange={e=>setSaleTypeFilter(e.target.value)} style={{ fontSize:12, padding:"9px 11px" }}>
+                        {saleTypeOptions.map(t => (
+                          <option key={t} value={t}>{t}{t !== "All" ? ` (${products.filter(p=> (saleGenderFilter==="All" || p.gender===saleGenderFilter) && p.type===t).length})` : ""}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                {/* Product grid with images */}
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))", gap:10, marginBottom:32 }}>
-                  {filteredProducts.map(p => {
-                    const totalStock = p.stock_by_size ? Object.values(p.stock_by_size).reduce((a,b)=>a+b,0) : (p.stock||0);
-                    return (
-                      <div key={p.id} onClick={()=>selectProductForSale(p)} style={{
-                        cursor:"pointer", borderRadius:14, overflow:"hidden",
-                        background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)",
-                        transition:"all .2s",
-                      }} className="sale-card">
-                        <div style={{ aspectRatio:"1/1", overflow:"hidden", position:"relative" }}>
-                          <img src={p.image} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} onError={e=>{e.target.style.background="#222";}} />
-                          {totalStock <= 3 && <div style={{ position:"absolute", top:6, right:6, background:"rgba(255,60,100,.9)", color:"#fff", fontSize:8, fontWeight:700, padding:"2px 6px", borderRadius:4 }}>LOW</div>}
-                        </div>
-                        <div style={{ padding:"10px 10px 12px" }}>
-                          <div style={{ fontSize:12, fontWeight:600, color:"#fff", lineHeight:1.3, marginBottom:4, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
-                          <div style={{ fontSize:10, color:"#555", marginBottom:4 }}>{p.type} · {(p.sizes||[]).join("/")}</div>
-                          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                            <div style={{ fontSize:14, fontWeight:700, color:"#a06aff" }}>{fmt(p.price)}</div>
-                            <div style={{ fontSize:10, color: totalStock <= 3 ? "#ff3c64" : "#555" }}>{totalStock} left</div>
+                    {/* Search */}
+                    <input className="form-field" type="text" placeholder="Search…" value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} style={{ fontSize:12, padding:"9px 11px" }} />
+
+                    <div style={{ fontSize:10, color:"#444", padding:"0 4px" }}>{filteredProducts.length} product{filteredProducts.length !== 1 ? "s" : ""}</div>
+                  </div>
+
+                  {/* Right side — product grid */}
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:10, marginBottom:32 }}>
+                      {filteredProducts.map(p => {
+                        const totalStock = p.stock_by_size ? Object.values(p.stock_by_size).reduce((a,b)=>a+b,0) : (p.stock||0);
+                        return (
+                          <div key={p.id} onClick={()=>selectProductForSale(p)} style={{
+                            cursor:"pointer", borderRadius:14, overflow:"hidden",
+                            background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)",
+                            transition:"all .2s",
+                          }} className="sale-card">
+                            <div style={{ aspectRatio:"1/1", overflow:"hidden", position:"relative" }}>
+                              <img src={p.image} alt={p.name} style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }} onError={e=>{e.target.style.background="#222";}} />
+                              {totalStock <= 3 && <div style={{ position:"absolute", top:6, right:6, background:"rgba(255,60,100,.9)", color:"#fff", fontSize:8, fontWeight:700, padding:"2px 6px", borderRadius:4 }}>LOW</div>}
+                            </div>
+                            <div style={{ padding:"10px 10px 12px" }}>
+                              <div style={{ fontSize:12, fontWeight:600, color:"#fff", lineHeight:1.3, marginBottom:4, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.name}</div>
+                              <div style={{ fontSize:10, color:"#555", marginBottom:4 }}>{p.type} · {(p.sizes||[]).join("/")}</div>
+                              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                                <div style={{ fontSize:14, fontWeight:700, color:"#a06aff" }}>{fmt(p.price)}</div>
+                                <div style={{ fontSize:10, color: totalStock <= 3 ? "#ff3c64" : "#555" }}>{totalStock} left</div>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                      {filteredProducts.length === 0 && (
+                        <div style={{ gridColumn:"1/-1", textAlign:"center", padding:"40px 20px", color:"#444", fontSize:13 }}>No products match these filters.</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </>
             ) : (
@@ -620,8 +651,11 @@ function AdminDashboard({ onLogout }) {
                       )}
                     </div>
 
-                    <button type="submit" className="submit-btn" style={{ width:"100%" }} disabled={!saleSize}>
-                      {saleSize ? "Record Sale →" : "Pick a size first"}
+                    {saleError && (
+                      <div style={{ padding:"10px 14px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.25)", borderRadius:10, marginBottom:12, fontSize:12, color:"#ff3c64", fontWeight:500 }}>{saleError}</div>
+                    )}
+                    <button type="submit" className="submit-btn" style={{ width:"100%", opacity: saleRecording ? 0.6 : 1 }} disabled={!saleSize || saleRecording}>
+                      {saleRecording ? "Recording…" : saleSize ? "Record Sale →" : "Pick a size first"}
                     </button>
                   </form>
                 </div>
@@ -825,9 +859,14 @@ function AdminDashboard({ onLogout }) {
             </div>
             )}
 
-            {/* Add Withdrawal */}
+            {/* Withdrawal — collapsible */}
             <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24 }}>
-              <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ffb400", marginBottom:16 }}>WITHDRAWALS</div>
+              <div onClick={()=>setWithdrawalOpen(o=>!o)} style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ffb400", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"space-between", userSelect:"none" }}>
+                <span>WITHDRAWALS</span>
+                <span style={{ fontSize:14, color:"#555", transition:"transform .2s", transform: withdrawalOpen ? "rotate(180deg)" : "rotate(0)" }}>▼</span>
+              </div>
+            {withdrawalOpen && (<>
+              <div style={{ marginTop:16 }} />
               <form onSubmit={async (e) => {
                 e.preventDefault();
                 if (!newWithdrawal.amount) return;
@@ -885,6 +924,7 @@ function AdminDashboard({ onLogout }) {
                   </>
                 );
               })()}
+            </>)}
             </div>
 
             {/* Add Expense */}
@@ -1230,6 +1270,7 @@ function GlobalStyles() {
       .success-badge{background:rgba(0,212,150,.14);border:1px solid rgba(0,212,150,.28);color:#00d496;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:500;display:inline-flex;align-items:center;gap:6px;}
       .admin-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
       @media(max-width:480px){.admin-form-grid{grid-template-columns:1fr!important;}}
+      @media(max-width:640px){.sale-layout{flex-direction:column!important;}.sale-sidebar{width:100%!important;position:static!important;}}
       .bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;}
       .bar-fill{width:100%;background:linear-gradient(180deg,rgba(160,106,255,.75),rgba(255,60,100,.75));border-radius:6px 6px 0 0;transition:height .8s cubic-bezier(.4,0,.2,1);}
       .modal-backdrop{position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:20px;}
