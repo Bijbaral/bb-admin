@@ -298,20 +298,22 @@ function AdminDashboard({ onLogout }) {
 
   async function handleDeleteProduct(id) {
     if (!confirm("Delete this product permanently?")) return;
-    await supabase.from("products").delete().eq("id", id);
+    const { error } = await supabase.from("products").delete().eq("id", id);
+    if (error) return alert("Delete failed: " + error.message);
+    setProducts(prev => prev.filter(p => p.id !== id));
   }
 
   /* ── Orders ── */
   async function updateOrderStatus(id, status) {
     const { error } = await supabase.from("orders").update({ status }).eq("id", id);
-    if (error) alert("Status update failed: " + error.message);
+    if (error) return alert("Status update failed: " + error.message);
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
   }
 
   async function handleDeleteOrder(id) {
-    if (!confirm("Delete this order? (ID: " + id + ")")) return;
-    const { data, error } = await supabase.from("orders").delete().eq("id", id).select();
+    if (!confirm("Delete this order?")) return;
+    const { error } = await supabase.from("orders").delete().eq("id", id);
     if (error) return alert("Delete failed: " + error.message);
-    if (!data || data.length === 0) return alert("Delete returned no error but no rows were removed. ID: " + id);
     setOrders(prev => prev.filter(o => o.id !== id));
   }
 
@@ -332,7 +334,9 @@ function AdminDashboard({ onLogout }) {
 
   async function handleDeleteExpense(id) {
     if (!confirm("Delete this expense?")) return;
-    await supabase.from("expenses").delete().eq("id", id);
+    const { error } = await supabase.from("expenses").delete().eq("id", id);
+    if (error) return alert("Delete failed: " + error.message);
+    setExpenses(prev => prev.filter(e => e.id !== id));
   }
 
   async function handleDeleteSale(sale) {
@@ -349,11 +353,16 @@ function AdminDashboard({ onLogout }) {
         }).eq("id", sale.product_id);
       }
     }
-    // Remove matching auto-created order (same product name, qty, approximate time)
+    // Remove matching auto-created order
     const orderProduct = `${sale.product_name} (${sale.size})`;
     const { data: matchingOrders } = await supabase.from("orders").select("id").eq("product", orderProduct).eq("qty", sale.quantity).limit(1);
-    if (matchingOrders?.length) await supabase.from("orders").delete().eq("id", matchingOrders[0].id);
-    await supabase.from("sales").delete().eq("id", sale.id);
+    if (matchingOrders?.length) {
+      await supabase.from("orders").delete().eq("id", matchingOrders[0].id);
+      setOrders(prev => prev.filter(o => o.id !== matchingOrders[0].id));
+    }
+    const { error } = await supabase.from("sales").delete().eq("id", sale.id);
+    if (error) return alert("Sale delete failed: " + error.message);
+    setSales(prev => prev.filter(s => s.id !== sale.id));
   }
 
   async function setHero(url) {
@@ -922,7 +931,7 @@ function AdminDashboard({ onLogout }) {
                               <div style={{ fontSize:10, color:"#555" }}>{w.expense_date}</div>
                             </div>
                             <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ffb400" }}>{fmt(w.amount)}</div>
-                            <button onClick={async ()=>{ if(confirm("Delete this withdrawal?")) await supabase.from("expenses").delete().eq("id",w.id); }} style={{ padding:"4px 8px", background:"rgba(255,180,0,.1)", border:"1px solid rgba(255,180,0,.2)", borderRadius:6, color:"#ffb400", fontSize:10, cursor:"pointer" }}>✕</button>
+                            <button onClick={async ()=>{ if(!confirm("Delete this withdrawal?")) return; const{error}=await supabase.from("expenses").delete().eq("id",w.id); if(error) return alert("Delete failed: "+error.message); setExpenses(prev=>prev.filter(e=>e.id!==w.id)); }} style={{ padding:"4px 8px", background:"rgba(255,180,0,.1)", border:"1px solid rgba(255,180,0,.2)", borderRadius:6, color:"#ffb400", fontSize:10, cursor:"pointer" }}>✕</button>
                           </div>
                         ))}
                       </div>
