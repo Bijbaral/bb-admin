@@ -16,7 +16,8 @@ const STATUS_COLORS = {
   Cancelled:{ bg:"rgba(255,60,100,0.12)", color:"#ff3c64" },
 };
 
-const EXPENSE_CATEGORIES = ["Inventory Purchase","Shipping","Shop Investment","Packaging","Marketing","Other"];
+const EXPENSE_CATEGORIES = ["Inventory Purchase","Shipping","Shop Investment","Packaging","Marketing","Rent","Salary","Utilities","Platform Fees","Other"];
+const PRODUCT_TYPES = ["T-Shirts","Shirts","Trousers","Shorts","Inner Wear","Socks","Sweatshirts","Hoodies","Oversized Tees","Tops","Bottomwear","Winterwear","Basics","Boys Wear","Girls Wear"];
 const fmt = n => "₹" + Number(n).toLocaleString("en-IN");
 const MAX_IMAGES = 5;
 const SIZE_OPTIONS = ["S","M","L","XL","XXL"];
@@ -135,6 +136,12 @@ function AdminDashboard({ onLogout }) {
   const [newExpense, setNewExpense] = useState({ category:"Inventory Purchase", description:"", amount:"", shipping:"", expense_date: new Date().toISOString().slice(0,10) });
   const [expenseSuccess, setExpenseSuccess] = useState(false);
   const [booksMonth, setBooksMonth] = useState(new Date().toISOString().slice(0,7));
+  const [booksFrom, setBooksFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0,10); });
+  const [booksTo, setBooksTo] = useState(new Date().toISOString().slice(0,10));
+
+  // Order filters
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderStatusFilter, setOrderStatusFilter] = useState("All");
 
   useEffect(() => {
     async function load() {
@@ -200,7 +207,7 @@ function AdminDashboard({ onLogout }) {
       product: `${saleProduct.name} (${saleSize})`,
       gender: saleProduct.gender,
       qty: saleQty,
-      amount: total + (+saleShipping || 0),
+      amount: total,
       status: saleChannel === "Store" ? "Delivered" : "Pending",
     }]);
 
@@ -297,9 +304,25 @@ function AdminDashboard({ onLogout }) {
     await supabase.from("expenses").delete().eq("id", id);
   }
 
-  async function handleDeleteSale(id) {
-    if (!confirm("Delete this sale record?")) return;
-    await supabase.from("sales").delete().eq("id", id);
+  async function handleDeleteSale(sale) {
+    if (!confirm("Delete this sale record? Stock will be restored.")) return;
+    // Restore stock
+    if (sale.product_id) {
+      const prod = products.find(p => p.id === sale.product_id);
+      if (prod) {
+        const sbs = { ...(prod.stock_by_size || {}) };
+        if (sale.size && sbs[sale.size] !== undefined) sbs[sale.size] = (sbs[sale.size] || 0) + sale.quantity;
+        await supabase.from("products").update({
+          stock_by_size: sbs,
+          stock: Math.max(0, (prod.stock || 0) + sale.quantity),
+        }).eq("id", sale.product_id);
+      }
+    }
+    // Remove matching auto-created order (same product name, qty, approximate time)
+    const orderProduct = `${sale.product_name} (${sale.size})`;
+    const { data: matchingOrders } = await supabase.from("orders").select("id").eq("product", orderProduct).eq("qty", sale.quantity).limit(1);
+    if (matchingOrders?.length) await supabase.from("orders").delete().eq("id", matchingOrders[0].id);
+    await supabase.from("sales").delete().eq("id", sale.id);
   }
 
   async function setHero(url) {
@@ -329,8 +352,40 @@ function AdminDashboard({ onLogout }) {
     if (saleGenderFilter !== "All" && p.gender !== saleGenderFilter) return false;
     if (saleTypeFilter !== "All" && p.type !== saleTypeFilter) return false;
     if (saleSearch && !p.name.toLowerCase().includes(saleSearch.toLowerCase())) return false;
+    const totalStock = p.stock_by_size ? Object.values(p.stock_by_size).reduce((a,b)=>a+b,0) : (p.stock||0);
+    if (totalStock <= 0) return false;
     return true;
   });
+
+  // Orders filtered
+  const filteredOrders = orders.filter(o => {
+    if (orderStatusFilter !== "All" && o.status !== orderStatusFilter) return false;
+    if (orderSearch) {
+      const q = orderSearch.toLowerCase();
+      if (!((o.customer||"").toLowerCase().includes(q) || (o.phone||"").includes(q) || (o.product||"").toLowerCase().includes(q))) return false;
+    }
+    return true;
+  });
+
+  // Timeline data for Books chart
+  const timelineDays = (() => {
+    const days = [];
+    const from = new Date(booksFrom), to = new Date(booksTo);
+    for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+      const key = d.toISOString().slice(0,10);
+      const daySales = sales.filter(s => s.created_at?.slice(0,10) === key);
+      const dayRev = daySales.reduce((s,r) => s + (+r.total_amount), 0);
+      const dayShip = daySales.reduce((s,r) => s + (+r.shipping_cost || 0), 0);
+      const dayExp = expenses.filter(e => e.expense_date === key).reduce((s,e) => s + (+e.amount), 0);
+      days.push({ date: key, label: `${d.getDate()}/${d.getMonth()+1}`, revenue: dayRev, shipping: dayShip, expenses: dayExp, profit: dayRev - dayExp - dayShip });
+    }
+    return days;
+  })();
+  const timelineMax = Math.max(...timelineDays.map(d => Math.max(d.revenue, d.expenses)), 1);
+  const timelineRangeRev = timelineDays.reduce((s,d) => s + d.revenue, 0);
+  const timelineRangeExp = timelineDays.reduce((s,d) => s + d.expenses, 0);
+  const timelineRangeShip = timelineDays.reduce((s,d) => s + d.shipping, 0);
+  const timelineRangeProfit = timelineRangeRev - timelineRangeExp - timelineRangeShip;
 
   const tabs = [["sales","Sales"],["products","Products"],["inventory","Inventory"],["books","Books"],["orders","Orders"]];
 
@@ -497,7 +552,7 @@ function AdminDashboard({ onLogout }) {
                     <label className="form-label" style={{ marginBottom:8, display:"block" }}>Channel</label>
                     <div style={{ display:"flex", gap:8, marginBottom:14 }}>
                       {["Store","Online"].map(ch => (
-                        <button key={ch} type="button" onClick={()=>setSaleChannel(ch)} style={{
+                        <button key={ch} type="button" onClick={()=>{setSaleChannel(ch);if(ch==="Store")setSaleShipping("");}} style={{
                           padding:"10px 20px", borderRadius:10, cursor:"pointer", fontWeight:600, fontSize:13,
                           background: saleChannel===ch ? "linear-gradient(135deg,#a06aff,#ff3c64)" : "rgba(255,255,255,.04)",
                           border: saleChannel===ch ? "1px solid transparent" : "1px solid rgba(255,255,255,.1)",
@@ -506,11 +561,13 @@ function AdminDashboard({ onLogout }) {
                       ))}
                     </div>
 
-                    {/* Shipping Cost (Online sales) */}
-                    <div style={{ marginBottom:14 }}>
-                      <label className="form-label">Shipping Cost (₹)</label>
-                      <input className="form-field" type="number" placeholder="0" value={saleShipping} onChange={e=>setSaleShipping(e.target.value)} />
-                    </div>
+                    {/* Shipping Cost (Online sales only) */}
+                    {saleChannel === "Online" && (
+                      <div style={{ marginBottom:14 }}>
+                        <label className="form-label">Shipping Cost (₹)</label>
+                        <input className="form-field" type="number" placeholder="0" value={saleShipping} onChange={e=>setSaleShipping(e.target.value)} />
+                      </div>
+                    )}
 
                     {/* Customer details (optional) */}
                     <div className="admin-form-grid" style={{ marginBottom:18 }}>
@@ -560,7 +617,7 @@ function AdminDashboard({ onLogout }) {
                       </div>
                       <div style={{ fontSize:9, padding:"3px 8px", borderRadius:6, fontWeight:600, background: s.channel==="Store" ? "rgba(160,106,255,.12)" : "rgba(0,212,150,.12)", color: s.channel==="Store" ? "#a06aff" : "#00d496" }}>{s.channel}</div>
                       <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#a06aff" }}>{fmt(s.total_amount)}</div>
-                      <button onClick={()=>handleDeleteSale(s.id)} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
+                      <button onClick={()=>handleDeleteSale(s)} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
                     </div>
                   ))}
                 </div>
@@ -582,7 +639,7 @@ function AdminDashboard({ onLogout }) {
                   <div><label className="form-label">Product Name</label><input className="form-field" type="text" placeholder="e.g. Oversized Acid Wash Tee" value={newProduct.name} onChange={e=>setNewProduct(p=>({...p,name:e.target.value}))} /></div>
                   <div className="admin-form-grid">
                     {[
-                      {label:"Product Type",key:"type",opts:["T-Shirts","Shirts","Trousers","Shorts","Inner Wear","Socks","Sweatshirts","Hoodies","Oversized Tees","Tops","Bottomwear","Winterwear","Basics","Boys Wear","Girls Wear"]},
+                      {label:"Product Type",key:"type",opts:PRODUCT_TYPES},
                       {label:"Gender",key:"gender",opts:["MEN","WOMEN","KIDS","UNISEX"]},
                       {label:"Fit Type",key:"fit",opts:["Oversized","Boxy","True to Size","Standard Fit"]},
                     ].map(f => (
@@ -678,6 +735,60 @@ function AdminDashboard({ onLogout }) {
               ))}
             </div>
 
+            {/* Performance Timeline */}
+            <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18, flexWrap:"wrap", gap:12 }}>
+                <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#fff" }}>PERFORMANCE TIMELINE</div>
+                <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+                  <label style={{ fontSize:10, color:"#555", letterSpacing:".08em" }}>FROM</label>
+                  <input type="date" value={booksFrom} onChange={e=>setBooksFrom(e.target.value)} style={{ padding:"6px 10px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:12, fontFamily:"'DM Sans',sans-serif" }} />
+                  <label style={{ fontSize:10, color:"#555", letterSpacing:".08em" }}>TO</label>
+                  <input type="date" value={booksTo} onChange={e=>setBooksTo(e.target.value)} style={{ padding:"6px 10px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:12, fontFamily:"'DM Sans',sans-serif" }} />
+                </div>
+              </div>
+              {/* Range KPIs */}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:10, marginBottom:18 }}>
+                {[
+                  { label:"Revenue", value:fmt(timelineRangeRev), color:"#00d496" },
+                  { label:"Expenses", value:fmt(timelineRangeExp), color:"#ff3c64" },
+                  { label:"Shipping", value:fmt(timelineRangeShip), color:"#00b4ff" },
+                  { label:"Profit", value:fmt(timelineRangeProfit), color: timelineRangeProfit >= 0 ? "#00d496" : "#ff3c64" },
+                ].map(k => (
+                  <div key={k.label} style={{ padding:"10px 12px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:10 }}>
+                    <div style={{ fontSize:9, color:"#555", textTransform:"uppercase", letterSpacing:".08em", marginBottom:4 }}>{k.label}</div>
+                    <div style={{ fontFamily:"Bebas Neue", fontSize:20, color:k.color, lineHeight:1 }}>{k.value}</div>
+                  </div>
+                ))}
+              </div>
+              {/* Legend */}
+              <div style={{ display:"flex", gap:16, marginBottom:14, fontSize:10 }}>
+                <span style={{ display:"flex", alignItems:"center", gap:5 }}><span style={{ width:10, height:10, borderRadius:3, background:"#00d496" }} /> Revenue</span>
+                <span style={{ display:"flex", alignItems:"center", gap:5 }}><span style={{ width:10, height:10, borderRadius:3, background:"#ff3c64" }} /> Expenses</span>
+                <span style={{ display:"flex", alignItems:"center", gap:5 }}><span style={{ width:10, height:10, borderRadius:3, background:"rgba(160,106,255,.6)" }} /> Profit</span>
+              </div>
+              {/* Chart */}
+              <div style={{ overflowX:"auto", paddingBottom:8 }}>
+                <div style={{ display:"flex", alignItems:"flex-end", gap:2, minWidth: timelineDays.length * 32, height:180 }}>
+                  {timelineDays.map((d, i) => {
+                    const revH = timelineMax ? (d.revenue / timelineMax) * 150 : 0;
+                    const expH = timelineMax ? (d.expenses / timelineMax) * 150 : 0;
+                    const profH = timelineMax ? (Math.abs(d.profit) / timelineMax) * 150 : 0;
+                    return (
+                      <div key={d.date} style={{ flex:1, minWidth:28, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }} title={`${d.date}\nRev: ${fmt(d.revenue)}\nExp: ${fmt(d.expenses)}\nProfit: ${fmt(d.profit)}`}>
+                        <div style={{ display:"flex", gap:1, alignItems:"flex-end", height:150 }}>
+                          <div style={{ width:7, height:Math.max(revH, 1), background:"#00d496", borderRadius:"3px 3px 0 0", transition:"height .3s" }} />
+                          <div style={{ width:7, height:Math.max(expH, 1), background:"#ff3c64", borderRadius:"3px 3px 0 0", transition:"height .3s" }} />
+                          <div style={{ width:7, height:Math.max(profH, 1), background: d.profit >= 0 ? "rgba(160,106,255,.6)" : "rgba(255,60,100,.4)", borderRadius:"3px 3px 0 0", transition:"height .3s" }} />
+                        </div>
+                        <div style={{ fontSize:8, color:"#444", whiteSpace:"nowrap", transform: timelineDays.length > 15 && i % 2 !== 0 ? "scale(0)" : "none" }}>{d.label}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {timelineDays.length === 0 && <div style={{ fontSize:13, color:"#444", textAlign:"center", padding:20 }}>No data for this range.</div>}
+            </div>
+
             {/* Add Expense */}
             <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24 }}>
               <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ff3c64", marginBottom:16 }}>ADD EXPENSE</div>
@@ -767,7 +878,22 @@ function AdminDashboard({ onLogout }) {
         {/* ═══════════ ORDERS TAB ═══════════ */}
         {adminTab==="orders" && (
           <div className="fu">
-            <div style={{ fontFamily:"Bebas Neue", fontSize:26, color:"#fff", marginBottom:22 }}>ORDERS</div>
+            <div style={{ fontFamily:"Bebas Neue", fontSize:26, color:"#fff", marginBottom:12 }}>ORDERS</div>
+            {/* Search + status filter */}
+            <div style={{ display:"flex", gap:10, marginBottom:16, flexWrap:"wrap", alignItems:"center" }}>
+              <input className="form-field" type="text" placeholder="Search customer, phone, product…" value={orderSearch} onChange={e=>setOrderSearch(e.target.value)} style={{ maxWidth:300, flex:1 }} />
+              <div style={{ display:"flex", gap:5 }}>
+                {["All","Pending","Packed","Shipped","Delivered","Cancelled"].map(st => (
+                  <button key={st} type="button" onClick={()=>setOrderStatusFilter(st)} style={{
+                    padding:"6px 12px", borderRadius:8, cursor:"pointer", fontWeight:600, fontSize:10,
+                    background: orderStatusFilter===st ? (STATUS_COLORS[st]?.bg || "rgba(160,106,255,.2)") : "rgba(255,255,255,.03)",
+                    border: `1px solid ${orderStatusFilter===st ? (STATUS_COLORS[st]?.color || "rgba(160,106,255,.4)") + "44" : "rgba(255,255,255,.06)"}`,
+                    color: orderStatusFilter===st ? (STATUS_COLORS[st]?.color || "#c084fc") : "#555",
+                  }}>{st}{st !== "All" ? ` (${orders.filter(o=>o.status===st).length})` : ""}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{ fontSize:11, color:"#444", marginBottom:14 }}>{filteredOrders.length} of {orders.length} orders</div>
             <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:22 }}>
               <div style={{ fontFamily:"Bebas Neue", fontSize:17, color:"#a06aff", marginBottom:16 }}>ADD MANUAL ORDER</div>
               <form onSubmit={handleAddOrder}>
@@ -785,7 +911,7 @@ function AdminDashboard({ onLogout }) {
               </form>
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:9 }}>
-              {orders.map(o => (
+              {filteredOrders.map(o => (
                 <div key={o.id} style={{ padding:"16px 18px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)", borderRadius:15, display:"grid", gridTemplateColumns:"1fr auto auto", gap:14, alignItems:"center" }}>
                   <div><div style={{ fontSize:13, fontWeight:600, color:"#fff" }}>{o.customer}{o.phone ? ` · ${o.phone}` : ""}</div><div style={{ fontSize:11, color:"#555", marginTop:2 }}>{o.product} · {o.gender} · Qty {o.qty}</div></div>
                   <div style={{ fontFamily:"Bebas Neue", fontSize:20, color:"#a06aff" }}>{fmt(o.amount)}</div>
@@ -794,6 +920,7 @@ function AdminDashboard({ onLogout }) {
                   </select>
                 </div>
               ))}
+              {filteredOrders.length === 0 && <div style={{ fontSize:13, color:"#444", padding:20, textAlign:"center" }}>{orderSearch || orderStatusFilter !== "All" ? "No matching orders." : "No orders yet."}</div>}
             </div>
           </div>
         )}
@@ -811,7 +938,7 @@ function AdminDashboard({ onLogout }) {
                 <div style={{ display:"grid", gap:13 }}>
                   <div><label className="form-label">Product Name</label><input className="form-field" type="text" value={editingProduct.name} onChange={e=>setEditingProduct(p=>({...p,name:e.target.value}))} /></div>
                   <div className="admin-form-grid">
-                    <div><label className="form-label">Type</label><select className="form-field" value={editingProduct.type} onChange={e=>setEditingProduct(p=>({...p,type:e.target.value}))}>{["T-Shirts","Shirts","Trousers","Shorts","Inner Wear","Socks","Sweatshirts","Hoodies","Oversized Tees","Tops","Bottomwear","Winterwear","Basics","Boys Wear","Girls Wear"].map(t=><option key={t}>{t}</option>)}</select></div>
+                    <div><label className="form-label">Type</label><select className="form-field" value={editingProduct.type} onChange={e=>setEditingProduct(p=>({...p,type:e.target.value}))}>{PRODUCT_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
                     <div><label className="form-label">Gender</label><select className="form-field" value={editingProduct.gender} onChange={e=>setEditingProduct(p=>({...p,gender:e.target.value}))}>{["MEN","WOMEN","KIDS","UNISEX"].map(g=><option key={g}>{g}</option>)}</select></div>
                     <div><label className="form-label">MRP (₹)</label><input className="form-field" type="number" value={editingProduct.mrp} onChange={e=>setEditingProduct(p=>({...p,mrp:e.target.value}))} /></div>
                     <div><label className="form-label">Selling Price (₹)</label><input className="form-field" type="number" value={editingProduct.price} onChange={e=>setEditingProduct(p=>({...p,price:e.target.value}))} /></div>
