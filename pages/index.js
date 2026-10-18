@@ -127,6 +127,7 @@ function AdminDashboard({ onLogout }) {
   const [saleCustomer, setSaleCustomer] = useState("");
   const [saleSuccess, setSaleSuccess] = useState(false);
   const [saleSearch, setSaleSearch] = useState("");
+  const [saleTypeFilter, setSaleTypeFilter] = useState("All");
 
   // Expense state
   const [newExpense, setNewExpense] = useState({ category:"Inventory Purchase", description:"", amount:"", expense_date: new Date().toISOString().slice(0,10) });
@@ -308,9 +309,12 @@ function AdminDashboard({ onLogout }) {
   const totalShipping = sales.reduce((s, r) => s + (+r.shipping_cost || 0), 0);
   const totalExpenseAll = expenses.reduce((s, e) => s + (+e.amount), 0);
 
-  const filteredProducts = saleSearch
-    ? products.filter(p => p.name.toLowerCase().includes(saleSearch.toLowerCase()) || p.type.toLowerCase().includes(saleSearch.toLowerCase()))
-    : products;
+  const saleTypeOptions = ["All", ...new Set(products.map(p => p.type).filter(Boolean))];
+  const filteredProducts = products.filter(p => {
+    if (saleTypeFilter !== "All" && p.type !== saleTypeFilter) return false;
+    if (saleSearch && !p.name.toLowerCase().includes(saleSearch.toLowerCase())) return false;
+    return true;
+  });
 
   const tabs = [["sales","Sales"],["products","Products"],["inventory","Inventory"],["books","Books"],["orders","Orders"]];
 
@@ -368,7 +372,19 @@ function AdminDashboard({ onLogout }) {
                 {/* Product search */}
                 <div style={{ fontFamily:"Bebas Neue", fontSize:22, color:"#fff", marginBottom:4 }}>QUICK SALE</div>
                 <div style={{ fontSize:12, color:"#555", marginBottom:16 }}>Tap a product to record a sale</div>
-                <input className="form-field" type="text" placeholder="Search products…" value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} style={{ marginBottom:16, maxWidth:360 }} />
+
+                {/* Type filter + Search */}
+                <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+                  {saleTypeOptions.map(t => (
+                    <button key={t} type="button" onClick={()=>setSaleTypeFilter(t)} style={{
+                      padding:"6px 14px", borderRadius:9, cursor:"pointer", fontWeight:600, fontSize:11,
+                      background: saleTypeFilter===t ? "linear-gradient(135deg,#a06aff,#ff3c64)" : "rgba(255,255,255,.04)",
+                      border: saleTypeFilter===t ? "1px solid transparent" : "1px solid rgba(255,255,255,.08)",
+                      color: saleTypeFilter===t ? "#fff" : "#666", whiteSpace:"nowrap",
+                    }}>{t}{t !== "All" ? ` (${products.filter(p=>p.type===t).length})` : ""}</button>
+                  ))}
+                </div>
+                <input className="form-field" type="text" placeholder="Search by name…" value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} style={{ marginBottom:16, maxWidth:360 }} />
 
                 {/* Product grid with images */}
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))", gap:10, marginBottom:32 }}>
