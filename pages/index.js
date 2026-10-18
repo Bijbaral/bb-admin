@@ -303,12 +303,14 @@ function AdminDashboard({ onLogout }) {
 
   /* ── Orders ── */
   async function updateOrderStatus(id, status) {
-    await supabase.from("orders").update({ status }).eq("id", id);
+    const { error } = await supabase.from("orders").update({ status }).eq("id", id);
+    if (error) alert("Status update failed: " + error.message);
   }
 
   async function handleDeleteOrder(id) {
     if (!confirm("Delete this order?")) return;
-    await supabase.from("orders").delete().eq("id", id);
+    const { error } = await supabase.from("orders").delete().eq("id", id);
+    if (error) alert("Delete failed: " + error.message);
   }
 
   /* ── Expenses ── */
