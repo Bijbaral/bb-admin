@@ -144,7 +144,8 @@ function AdminDashboard({ onLogout }) {
   // Timeline collapsible
   const [timelineOpen, setTimelineOpen] = useState(false);
 
-  // Withdrawal state (collapsible)
+  // Withdrawal & export state
+  const [exportOpen, setExportOpen] = useState(false);
   const [withdrawalOpen, setWithdrawalOpen] = useState(false);
   const [newWithdrawal, setNewWithdrawal] = useState({ amount:"", description:"", date: new Date().toISOString().slice(0,10) });
   const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
@@ -831,29 +832,35 @@ function AdminDashboard({ onLogout }) {
         {adminTab==="books" && (
           <div className="fu">
             <div style={{ marginBottom:22 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12, marginBottom:14 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
                 <div style={{ fontFamily:"Bebas Neue", fontSize:26, color:"#fff" }}>BOOKS</div>
-                <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-                  <button onClick={()=>exportCSV("sales")} style={{ padding:"6px 12px", background:"rgba(0,212,150,.1)", border:"1px solid rgba(0,212,150,.25)", borderRadius:8, color:"#00d496", fontSize:10, fontWeight:600, cursor:"pointer" }}>Export Sales CSV</button>
-                  <button onClick={()=>exportCSV("expenses")} style={{ padding:"6px 12px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.25)", borderRadius:8, color:"#ff3c64", fontSize:10, fontWeight:600, cursor:"pointer" }}>Export Expenses CSV</button>
+                <div style={{ position:"relative" }}>
+                  <button onClick={()=>setExportOpen(o=>!o)} style={{ padding:"6px 12px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#888", fontSize:10, fontWeight:600, cursor:"pointer" }}>Export CSV ▾</button>
+                  {exportOpen && (
+                    <div style={{ position:"absolute", right:0, top:"100%", marginTop:4, background:"#1a1a1a", border:"1px solid rgba(255,255,255,.12)", borderRadius:10, overflow:"hidden", zIndex:20, minWidth:140 }}>
+                      <button onClick={()=>{exportCSV("sales");setExportOpen(false);}} style={{ display:"block", width:"100%", padding:"10px 14px", background:"none", border:"none", borderBottom:"1px solid rgba(255,255,255,.06)", color:"#00d496", fontSize:11, fontWeight:600, cursor:"pointer", textAlign:"left" }}>Sales</button>
+                      <button onClick={()=>{exportCSV("expenses");setExportOpen(false);}} style={{ display:"block", width:"100%", padding:"10px 14px", background:"none", border:"none", color:"#ff3c64", fontSize:11, fontWeight:600, cursor:"pointer", textAlign:"left" }}>Expenses</button>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
                 {[{k:"month",l:"This Month"},{k:"ytd",l:"YTD"},{k:"all",l:"All Time"},{k:"custom",l:"Custom"}].map(p => (
                   <button key={p.k} onClick={()=>{ if (p.k !== "custom") setRange(p.k); else setBooksRange("custom"); }} style={{
-                    padding:"6px 14px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer",
+                    padding:"5px 12px", borderRadius:20, fontSize:11, fontWeight:600, cursor:"pointer",
                     background: booksRange === p.k ? "linear-gradient(135deg,#a06aff,#ff3c64)" : "rgba(255,255,255,.05)",
                     border: booksRange === p.k ? "1px solid transparent" : "1px solid rgba(255,255,255,.1)",
                     color: booksRange === p.k ? "#fff" : "#777",
                   }}>{p.l}</button>
                 ))}
-                <div style={{ display:"flex", gap:6, alignItems:"center", marginLeft:8 }}>
-                  <label style={{ fontSize:10, color:"#555" }}>From</label>
-                  <input type="date" value={booksFrom} onChange={e=>{setBooksFrom(e.target.value);setBooksRange("custom");}} style={{ padding:"5px 8px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:11, fontFamily:"'DM Sans',sans-serif" }} />
-                  <label style={{ fontSize:10, color:"#555" }}>To</label>
-                  <input type="date" value={booksTo} onChange={e=>{setBooksTo(e.target.value);setBooksRange("custom");}} style={{ padding:"5px 8px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:11, fontFamily:"'DM Sans',sans-serif" }} />
-                </div>
               </div>
+              {booksRange === "custom" && (
+                <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:10 }}>
+                  <input type="date" value={booksFrom} onChange={e=>setBooksFrom(e.target.value)} style={{ flex:1, padding:"7px 10px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:12, fontFamily:"'DM Sans',sans-serif" }} />
+                  <span style={{ fontSize:11, color:"#555" }}>to</span>
+                  <input type="date" value={booksTo} onChange={e=>setBooksTo(e.target.value)} style={{ flex:1, padding:"7px 10px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:12, fontFamily:"'DM Sans',sans-serif" }} />
+                </div>
+              )}
             </div>
 
             {/* P&L Summary */}
