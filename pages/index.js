@@ -131,7 +131,7 @@ function AdminDashboard({ onLogout }) {
   const [saleGenderFilter, setSaleGenderFilter] = useState("All");
 
   // Expense state
-  const [newExpense, setNewExpense] = useState({ category:"Inventory Purchase", description:"", amount:"", shipping:"", expense_date: new Date().toISOString().slice(0,10) });
+  const [newExpense, setNewExpense] = useState({ category:"Inventory Purchase", description:"", amount:"", shipping:"", quantity:"", expense_date: new Date().toISOString().slice(0,10) });
   const [expenseSuccess, setExpenseSuccess] = useState(false);
   const [booksMonth, setBooksMonth] = useState(new Date().toISOString().slice(0,7));
   const [booksFrom, setBooksFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0,10); });
@@ -333,13 +333,14 @@ function AdminDashboard({ onLogout }) {
     e.preventDefault();
     if (!newExpense.amount) return;
     const shippingAmt = newExpense.category === "Inventory Purchase" ? (+newExpense.shipping || 0) : 0;
-    const rows = [{ category: newExpense.category, description: newExpense.description || null, amount: +newExpense.amount, expense_date: newExpense.expense_date }];
+    const qty = newExpense.category === "Inventory Purchase" && +newExpense.quantity > 0 ? +newExpense.quantity : null;
+    const rows = [{ category: newExpense.category, description: newExpense.description || null, amount: +newExpense.amount, expense_date: newExpense.expense_date, quantity: qty }];
     if (shippingAmt > 0) {
       rows.push({ category: "Shipping", description: `Shipping for: ${newExpense.description || "Inventory Purchase"}`, amount: shippingAmt, expense_date: newExpense.expense_date });
     }
     const { error } = await supabase.from("expenses").insert(rows);
     if (error) { alert("Error: " + error.message); return; }
-    setNewExpense({ category:"Inventory Purchase", description:"", amount:"", shipping:"", expense_date: new Date().toISOString().slice(0,10) });
+    setNewExpense({ category:"Inventory Purchase", description:"", amount:"", shipping:"", quantity:"", expense_date: new Date().toISOString().slice(0,10) });
     setExpenseSuccess(true); setTimeout(() => setExpenseSuccess(false), 2500);
   }
 
@@ -962,13 +963,21 @@ function AdminDashboard({ onLogout }) {
                   </div>
                   <div><label className="form-label">Amount (₹)</label><input className="form-field" type="number" placeholder="5000" value={newExpense.amount} onChange={e=>setNewExpense(x=>({...x,amount:e.target.value}))} /></div>
                   {newExpense.category === "Inventory Purchase" && (
+                    <div><label className="form-label">Quantity (pcs)</label><input className="form-field" type="number" placeholder="20" min="1" value={newExpense.quantity} onChange={e=>setNewExpense(x=>({...x,quantity:e.target.value}))} /></div>
+                  )}
+                  {newExpense.category === "Inventory Purchase" && (
                     <div><label className="form-label">Shipping (₹)</label><input className="form-field" type="number" placeholder="150" value={newExpense.shipping} onChange={e=>setNewExpense(x=>({...x,shipping:e.target.value}))} /></div>
                   )}
                   <div><label className="form-label">Date</label><input className="form-field" type="date" value={newExpense.expense_date} onChange={e=>setNewExpense(x=>({...x,expense_date:e.target.value}))} /></div>
                   <div><label className="form-label">Description</label><input className="form-field" type="text" placeholder="Bought T-shirts from supplier" value={newExpense.description} onChange={e=>setNewExpense(x=>({...x,description:e.target.value}))} /></div>
                 </div>
-                {newExpense.category === "Inventory Purchase" && (+newExpense.shipping || 0) > 0 && (
-                  <div style={{ fontSize:11, color:"#888", marginBottom:10 }}>Total: {fmt((+newExpense.amount||0) + (+newExpense.shipping||0))} (Item: {fmt(+newExpense.amount||0)} + Shipping: {fmt(+newExpense.shipping||0)})</div>
+                {newExpense.category === "Inventory Purchase" && ((+newExpense.shipping || 0) > 0 || (+newExpense.quantity || 0) > 0) && (
+                  <div style={{ fontSize:11, color:"#888", marginBottom:10 }}>
+                    {(+newExpense.shipping || 0) > 0 && <div>Total: {fmt((+newExpense.amount||0) + (+newExpense.shipping||0))} (Item: {fmt(+newExpense.amount||0)} + Shipping: {fmt(+newExpense.shipping||0)})</div>}
+                    {(+newExpense.quantity || 0) > 0 && (+newExpense.amount || 0) > 0 && (
+                      <div style={{ color:"#a06aff", marginTop:3 }}>Cost per pc: {fmt(((+newExpense.amount||0) + (+newExpense.shipping||0)) / (+newExpense.quantity))}</div>
+                    )}
+                  </div>
                 )}
                 <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
                   <button type="submit" className="submit-btn">Add Expense →</button>
@@ -1005,7 +1014,7 @@ function AdminDashboard({ onLogout }) {
                 <div key={e.id} style={{ display:"grid", gridTemplateColumns:"1fr auto auto", gap:12, alignItems:"center", padding:"12px 16px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:12 }}>
                   <div>
                     <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{e.description || e.category}</div>
-                    <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{e.category} · {e.expense_date}</div>
+                    <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{e.category} · {e.expense_date}{e.quantity ? ` · ${e.quantity} pcs · ${fmt(e.amount / e.quantity)}/pc` : ""}</div>
                   </div>
                   <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ff3c64" }}>{fmt(e.amount)}</div>
                   <button onClick={()=>setConfirmDelete({type:"expense",id:e.id,label:e.description||e.category})} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
