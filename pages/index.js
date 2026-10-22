@@ -133,8 +133,8 @@ function AdminDashboard({ onLogout }) {
   // Expense state
   const [newExpense, setNewExpense] = useState({ category:"Inventory Purchase", description:"", amount:"", shipping:"", quantity:"", expense_date: new Date().toISOString().slice(0,10) });
   const [expenseSuccess, setExpenseSuccess] = useState(false);
-  const [booksMonth, setBooksMonth] = useState(new Date().toISOString().slice(0,7));
-  const [booksFrom, setBooksFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0,10); });
+  const [booksRange, setBooksRange] = useState("month");
+  const [booksFrom, setBooksFrom] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10));
   const [booksTo, setBooksTo] = useState(new Date().toISOString().slice(0,10));
 
   // Order filters
@@ -144,7 +144,8 @@ function AdminDashboard({ onLogout }) {
   // Timeline collapsible
   const [timelineOpen, setTimelineOpen] = useState(false);
 
-  // Withdrawal state (collapsible)
+  // Withdrawal & export state
+  const [exportOpen, setExportOpen] = useState(false);
   const [withdrawalOpen, setWithdrawalOpen] = useState(false);
   const [newWithdrawal, setNewWithdrawal] = useState({ amount:"", description:"", date: new Date().toISOString().slice(0,10) });
   const [withdrawalSuccess, setWithdrawalSuccess] = useState(false);
@@ -377,18 +378,57 @@ function AdminDashboard({ onLogout }) {
     await supabase.from("settings").upsert({ key:"hero_image", value:url, updated_at:new Date().toISOString() });
   }
 
+  /* ── Range preset helper ── */
+  function setRange(preset) {
+    setBooksRange(preset);
+    const now = new Date();
+    if (preset === "month") {
+      setBooksFrom(new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10));
+      setBooksTo(now.toISOString().slice(0,10));
+    } else if (preset === "ytd") {
+      setBooksFrom(new Date(now.getFullYear(), 0, 1).toISOString().slice(0,10));
+      setBooksTo(now.toISOString().slice(0,10));
+    } else if (preset === "all") {
+      const earliest = [...sales.map(s=>s.created_at?.slice(0,10)), ...expenses.map(e=>e.expense_date)].filter(Boolean).sort()[0] || now.toISOString().slice(0,10);
+      setBooksFrom(earliest);
+      setBooksTo(now.toISOString().slice(0,10));
+    }
+  }
+
+  /* ── CSV export ── */
+  function exportCSV(type) {
+    let csv = "", filename = "";
+    if (type === "expenses") {
+      csv = "Date,Category,Description,Amount,Quantity,Cost Per Pc\n";
+      rangeExpenses.forEach(e => {
+        const cpp = e.quantity ? (e.amount / e.quantity).toFixed(2) : "";
+        csv += `${e.expense_date},${e.category},"${(e.description||"").replace(/"/g,'""')}",${e.amount},${e.quantity||""},${cpp}\n`;
+      });
+      filename = `expenses_${booksFrom}_to_${booksTo}.csv`;
+    } else if (type === "sales") {
+      csv = "Date,Product,Size,Qty,Amount,Shipping\n";
+      rangeSales.forEach(s => {
+        csv += `${s.created_at?.slice(0,10)},"${(s.product_name||"").replace(/"/g,'""')}",${s.size||""},${s.quantity},${s.total_amount},${s.shipping_cost||0}\n`;
+      });
+      filename = `sales_${booksFrom}_to_${booksTo}.csv`;
+    }
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  }
+
   /* ── Computed values ── */
   const today = new Date().toISOString().slice(0,10);
   const todaySales = sales.filter(s => s.created_at?.slice(0,10) === today);
   const todayRevenue = todaySales.reduce((s, r) => s + (+r.total_amount), 0);
   const todayItems = todaySales.reduce((s, r) => s + r.quantity, 0);
 
-  const monthSales = sales.filter(s => s.created_at?.slice(0,7) === booksMonth);
-  const monthRevenue = monthSales.reduce((s, r) => s + (+r.total_amount), 0);
-  const monthShipping = monthSales.reduce((s, r) => s + (+r.shipping_cost || 0), 0);
-  const monthExpenses = expenses.filter(e => e.expense_date?.slice(0,7) === booksMonth && e.category !== "Withdrawal");
-  const monthExpenseTotal = monthExpenses.reduce((s, e) => s + (+e.amount), 0);
-  const monthProfit = monthRevenue - monthExpenseTotal - monthShipping;
+  const rangeSales = sales.filter(s => { const d = s.created_at?.slice(0,10); return d >= booksFrom && d <= booksTo; });
+  const rangeRevenue = rangeSales.reduce((s, r) => s + (+r.total_amount), 0);
+  const rangeShipping = rangeSales.reduce((s, r) => s + (+r.shipping_cost || 0), 0);
+  const rangeExpenses = expenses.filter(e => e.expense_date >= booksFrom && e.expense_date <= booksTo && e.category !== "Withdrawal");
+  const rangeExpenseTotal = rangeExpenses.reduce((s, e) => s + (+e.amount), 0);
+  const rangeProfit = rangeRevenue - rangeExpenseTotal - rangeShipping;
+  const rangeWithdrawals = expenses.filter(e => e.category === "Withdrawal" && e.expense_date >= booksFrom && e.expense_date <= booksTo);
 
   const totalRevenue = sales.reduce((s, r) => s + (+r.total_amount), 0);
   const totalShipping = sales.reduce((s, r) => s + (+r.shipping_cost || 0), 0);
@@ -791,20 +831,47 @@ function AdminDashboard({ onLogout }) {
         {/* ═══════════ BOOKS TAB ═══════════ */}
         {adminTab==="books" && (
           <div className="fu">
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:22, flexWrap:"wrap", gap:12 }}>
-              <div style={{ fontFamily:"Bebas Neue", fontSize:26, color:"#fff" }}>BOOKS</div>
-              <input type="month" value={booksMonth} onChange={e=>setBooksMonth(e.target.value)} style={{ padding:"8px 12px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:10, color:"#fff", fontSize:13, fontFamily:"'DM Sans',sans-serif" }} />
+            <div style={{ marginBottom:22 }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+                <div style={{ fontFamily:"Bebas Neue", fontSize:26, color:"#fff" }}>BOOKS</div>
+                <div style={{ position:"relative" }}>
+                  <button onClick={()=>setExportOpen(o=>!o)} style={{ padding:"6px 12px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#888", fontSize:10, fontWeight:600, cursor:"pointer" }}>Export CSV ▾</button>
+                  {exportOpen && (
+                    <div style={{ position:"absolute", right:0, top:"100%", marginTop:4, background:"#1a1a1a", border:"1px solid rgba(255,255,255,.12)", borderRadius:10, overflow:"hidden", zIndex:20, minWidth:140 }}>
+                      <button onClick={()=>{exportCSV("sales");setExportOpen(false);}} style={{ display:"block", width:"100%", padding:"10px 14px", background:"none", border:"none", borderBottom:"1px solid rgba(255,255,255,.06)", color:"#00d496", fontSize:11, fontWeight:600, cursor:"pointer", textAlign:"left" }}>Sales</button>
+                      <button onClick={()=>{exportCSV("expenses");setExportOpen(false);}} style={{ display:"block", width:"100%", padding:"10px 14px", background:"none", border:"none", color:"#ff3c64", fontSize:11, fontWeight:600, cursor:"pointer", textAlign:"left" }}>Expenses</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap", alignItems:"center" }}>
+                {[{k:"month",l:"This Month"},{k:"ytd",l:"YTD"},{k:"all",l:"All Time"},{k:"custom",l:"Custom"}].map(p => (
+                  <button key={p.k} onClick={()=>{ if (p.k !== "custom") setRange(p.k); else setBooksRange("custom"); }} style={{
+                    padding:"5px 12px", borderRadius:20, fontSize:11, fontWeight:600, cursor:"pointer",
+                    background: booksRange === p.k ? "linear-gradient(135deg,#a06aff,#ff3c64)" : "rgba(255,255,255,.05)",
+                    border: booksRange === p.k ? "1px solid transparent" : "1px solid rgba(255,255,255,.1)",
+                    color: booksRange === p.k ? "#fff" : "#777",
+                  }}>{p.l}</button>
+                ))}
+              </div>
+              {booksRange === "custom" && (
+                <div style={{ display:"flex", gap:8, alignItems:"center", marginTop:10 }}>
+                  <input type="date" value={booksFrom} onChange={e=>setBooksFrom(e.target.value)} style={{ flex:1, padding:"7px 10px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:12, fontFamily:"'DM Sans',sans-serif" }} />
+                  <span style={{ fontSize:11, color:"#555" }}>to</span>
+                  <input type="date" value={booksTo} onChange={e=>setBooksTo(e.target.value)} style={{ flex:1, padding:"7px 10px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:12, fontFamily:"'DM Sans',sans-serif" }} />
+                </div>
+              )}
             </div>
 
             {/* P&L Summary */}
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:12, marginBottom:24 }}>
               {[
-                { label:"Revenue", value:fmt(monthRevenue), color:"#00d496" },
-                { label:"Shipping", value:fmt(monthShipping), color:"#00b4ff" },
-                { label:"Expenses", value:fmt(monthExpenseTotal), color:"#ff3c64" },
-                { label:"Net Profit", value:fmt(monthProfit), color: monthProfit >= 0 ? "#00d496" : "#ff3c64" },
+                { label:"Revenue", value:fmt(rangeRevenue), color:"#00d496" },
+                { label:"Shipping", value:fmt(rangeShipping), color:"#00b4ff" },
+                { label:"Expenses", value:fmt(rangeExpenseTotal), color:"#ff3c64" },
+                { label:"Net Profit", value:fmt(rangeProfit), color: rangeProfit >= 0 ? "#00d496" : "#ff3c64" },
                 { label:"All-Time Profit", value:fmt(totalRevenue - totalExpenseAll - totalShipping), color:"#a06aff" },
-                { label:"Total Withdrawn", value:fmt(expenses.filter(e=>e.category==="Withdrawal").reduce((s,e)=>s+(+e.amount),0)), color:"#ffb400" },
+                { label:"Withdrawn", value:fmt(rangeWithdrawals.reduce((s,e)=>s+(+e.amount),0)), color:"#ffb400" },
               ].map(k => (
                 <div key={k.label} className="kpi-card">
                   <div style={{ fontSize:10, color:"#444", textTransform:"uppercase", letterSpacing:".1em", marginBottom:7 }}>{k.label}</div>
@@ -825,29 +892,6 @@ function AdminDashboard({ onLogout }) {
             </div>
             {timelineOpen && (
             <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24, marginTop:-20 }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18, flexWrap:"wrap", gap:12 }}>
-                <div style={{ fontFamily:"Bebas Neue", fontSize:16, color:"#888" }}>DATE RANGE</div>
-                <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }} onClick={e=>e.stopPropagation()}>
-                  <label style={{ fontSize:10, color:"#555", letterSpacing:".08em" }}>FROM</label>
-                  <input type="date" value={booksFrom} onChange={e=>setBooksFrom(e.target.value)} style={{ padding:"6px 10px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:12, fontFamily:"'DM Sans',sans-serif" }} />
-                  <label style={{ fontSize:10, color:"#555", letterSpacing:".08em" }}>TO</label>
-                  <input type="date" value={booksTo} onChange={e=>setBooksTo(e.target.value)} style={{ padding:"6px 10px", background:"rgba(255,255,255,.05)", border:"1px solid rgba(255,255,255,.1)", borderRadius:8, color:"#fff", fontSize:12, fontFamily:"'DM Sans',sans-serif" }} />
-                </div>
-              </div>
-              {/* Range KPIs */}
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))", gap:10, marginBottom:18 }}>
-                {[
-                  { label:"Revenue", value:fmt(timelineRangeRev), color:"#00d496" },
-                  { label:"Expenses", value:fmt(timelineRangeExp), color:"#ff3c64" },
-                  { label:"Shipping", value:fmt(timelineRangeShip), color:"#00b4ff" },
-                  { label:"Profit", value:fmt(timelineRangeProfit), color: timelineRangeProfit >= 0 ? "#00d496" : "#ff3c64" },
-                ].map(k => (
-                  <div key={k.label} style={{ padding:"10px 12px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:10 }}>
-                    <div style={{ fontSize:9, color:"#555", textTransform:"uppercase", letterSpacing:".08em", marginBottom:4 }}>{k.label}</div>
-                    <div style={{ fontFamily:"Bebas Neue", fontSize:20, color:k.color, lineHeight:1 }}>{k.value}</div>
-                  </div>
-                ))}
-              </div>
               {/* Legend */}
               <div style={{ display:"flex", gap:16, marginBottom:14, fontSize:10 }}>
                 <span style={{ display:"flex", alignItems:"center", gap:5 }}><span style={{ width:10, height:10, borderRadius:3, background:"#00d496" }} /> Revenue</span>
@@ -915,14 +959,13 @@ function AdminDashboard({ onLogout }) {
                 </div>
               </form>
               {(() => {
-                const monthWithdrawals = expenses.filter(e => e.category === "Withdrawal" && e.expense_date?.slice(0,7) === booksMonth);
-                const totalWithdrawn = monthWithdrawals.reduce((s,e) => s + (+e.amount), 0);
+                const totalWithdrawn = rangeWithdrawals.reduce((s,e) => s + (+e.amount), 0);
                 const allTimeWithdrawn = expenses.filter(e => e.category === "Withdrawal").reduce((s,e) => s + (+e.amount), 0);
                 return (
                   <>
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginTop:18, marginBottom:14 }}>
                       <div style={{ padding:"12px 14px", background:"rgba(255,180,0,.06)", border:"1px solid rgba(255,180,0,.15)", borderRadius:12 }}>
-                        <div style={{ fontSize:9, color:"#666", textTransform:"uppercase", letterSpacing:".08em", marginBottom:4 }}>This Month</div>
+                        <div style={{ fontSize:9, color:"#666", textTransform:"uppercase", letterSpacing:".08em", marginBottom:4 }}>Selected Range</div>
                         <div style={{ fontFamily:"Bebas Neue", fontSize:22, color:"#ffb400" }}>{fmt(totalWithdrawn)}</div>
                       </div>
                       <div style={{ padding:"12px 14px", background:"rgba(255,180,0,.06)", border:"1px solid rgba(255,180,0,.15)", borderRadius:12 }}>
@@ -930,9 +973,9 @@ function AdminDashboard({ onLogout }) {
                         <div style={{ fontFamily:"Bebas Neue", fontSize:22, color:"#ffb400" }}>{fmt(allTimeWithdrawn)}</div>
                       </div>
                     </div>
-                    {monthWithdrawals.length > 0 && (
+                    {rangeWithdrawals.length > 0 && (
                       <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-                        {monthWithdrawals.map(w => (
+                        {rangeWithdrawals.map(w => (
                           <div key={w.id} style={{ display:"grid", gridTemplateColumns:"1fr auto auto", gap:12, alignItems:"center", padding:"10px 14px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:10 }}>
                             <div>
                               <div style={{ fontSize:12, fontWeight:500, color:"#fff" }}>{w.description || "Withdrawal"}</div>
@@ -987,12 +1030,12 @@ function AdminDashboard({ onLogout }) {
             </div>
 
             {/* Expense breakdown by category */}
-            {monthExpenses.length > 0 && (
+            {rangeExpenses.length > 0 && (
               <div style={{ padding:22, background:"rgba(255,255,255,.02)", border:"1px solid rgba(255,255,255,.07)", borderRadius:18, marginBottom:24 }}>
                 <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#fff", marginBottom:16 }}>EXPENSE BREAKDOWN</div>
                 {(() => {
                   const byCategory = {};
-                  monthExpenses.forEach(e => { byCategory[e.category] = (byCategory[e.category]||0) + (+e.amount); });
+                  rangeExpenses.forEach(e => { byCategory[e.category] = (byCategory[e.category]||0) + (+e.amount); });
                   const maxCat = Math.max(...Object.values(byCategory), 1);
                   return Object.entries(byCategory).sort((a,b)=>b[1]-a[1]).map(([cat, amt]) => (
                     <div key={cat} style={{ display:"grid", gridTemplateColumns:"140px 1fr 80px", gap:10, alignItems:"center", marginBottom:8 }}>
@@ -1010,7 +1053,7 @@ function AdminDashboard({ onLogout }) {
             {/* Expense list */}
             <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#fff", marginBottom:12 }}>EXPENSE LOG</div>
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-              {monthExpenses.map(e => (
+              {rangeExpenses.map(e => (
                 <div key={e.id} style={{ display:"grid", gridTemplateColumns:"1fr auto auto", gap:12, alignItems:"center", padding:"12px 16px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:12 }}>
                   <div>
                     <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{e.description || e.category}</div>
@@ -1020,7 +1063,7 @@ function AdminDashboard({ onLogout }) {
                   <button onClick={()=>setConfirmDelete({type:"expense",id:e.id,label:e.description||e.category})} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
                 </div>
               ))}
-              {monthExpenses.length === 0 && <div style={{ fontSize:13, color:"#444", padding:20, textAlign:"center" }}>No expenses for {booksMonth}</div>}
+              {rangeExpenses.length === 0 && <div style={{ fontSize:13, color:"#444", padding:20, textAlign:"center" }}>No expenses for selected range</div>}
             </div>
 
           </div>
