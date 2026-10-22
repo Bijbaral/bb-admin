@@ -131,7 +131,7 @@ function AdminDashboard({ onLogout }) {
   const [saleGenderFilter, setSaleGenderFilter] = useState("All");
 
   // Expense state
-  const [newExpense, setNewExpense] = useState({ category:"Inventory Purchase", description:"", amount:"", shipping:"", expense_date: new Date().toISOString().slice(0,10) });
+  const [newExpense, setNewExpense] = useState({ category:"Inventory Purchase", description:"", amount:"", shipping:"", quantity:"", expense_date: new Date().toISOString().slice(0,10) });
   const [expenseSuccess, setExpenseSuccess] = useState(false);
   const [booksMonth, setBooksMonth] = useState(new Date().toISOString().slice(0,7));
   const [booksFrom, setBooksFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0,10); });
@@ -333,13 +333,14 @@ function AdminDashboard({ onLogout }) {
     e.preventDefault();
     if (!newExpense.amount) return;
     const shippingAmt = newExpense.category === "Inventory Purchase" ? (+newExpense.shipping || 0) : 0;
-    const rows = [{ category: newExpense.category, description: newExpense.description || null, amount: +newExpense.amount, expense_date: newExpense.expense_date }];
+    const qty = newExpense.category === "Inventory Purchase" && +newExpense.quantity > 0 ? +newExpense.quantity : null;
+    const rows = [{ category: newExpense.category, description: newExpense.description || null, amount: +newExpense.amount, expense_date: newExpense.expense_date, quantity: qty }];
     if (shippingAmt > 0) {
       rows.push({ category: "Shipping", description: `Shipping for: ${newExpense.description || "Inventory Purchase"}`, amount: shippingAmt, expense_date: newExpense.expense_date });
     }
     const { error } = await supabase.from("expenses").insert(rows);
     if (error) { alert("Error: " + error.message); return; }
-    setNewExpense({ category:"Inventory Purchase", description:"", amount:"", shipping:"", expense_date: new Date().toISOString().slice(0,10) });
+    setNewExpense({ category:"Inventory Purchase", description:"", amount:"", shipping:"", quantity:"", expense_date: new Date().toISOString().slice(0,10) });
     setExpenseSuccess(true); setTimeout(() => setExpenseSuccess(false), 2500);
   }
 
@@ -485,6 +486,7 @@ function AdminDashboard({ onLogout }) {
                 { label:"Items Sold Today", value:todayItems, color:"#ff3c64" },
                 { label:"Total Revenue", value:fmt(totalRevenue), color:"#00d496" },
                 { label:"Total Sales", value:sales.length, color:"#ffb400" },
+                { label:"Total Pcs in Stock", value:products.reduce((sum, p) => sum + (p.stock_by_size ? Object.values(p.stock_by_size).reduce((a,b)=>a+b,0) : (p.stock||0)), 0), color:"#38bdf8" },
               ].map(k => (
                 <div key={k.label} className="kpi-card">
                   <div style={{ fontSize:10, color:"#444", textTransform:"uppercase", letterSpacing:".1em", marginBottom:7 }}>{k.label}</div>
@@ -544,7 +546,7 @@ function AdminDashboard({ onLogout }) {
                               <div style={{ fontSize:10, color:"#555", marginBottom:4 }}>{p.type} · {(p.sizes||[]).join("/")}</div>
                               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                                 <div style={{ fontSize:14, fontWeight:700, color:"#a06aff" }}>{fmt(p.price)}</div>
-                                <div style={{ fontSize:10, color: totalStock <= 3 ? "#ff3c64" : "#555" }}>{totalStock} left</div>
+                                <div style={{ fontSize:10, color: totalStock <= 3 ? "#ff3c64" : "#555" }}>{totalStock} pcs</div>
                               </div>
                             </div>
                           </div>
@@ -748,7 +750,7 @@ function AdminDashboard({ onLogout }) {
         {adminTab==="inventory" && (
           <div className="fu">
             <div style={{ fontFamily:"Bebas Neue", fontSize:26, color:"#fff", marginBottom:6 }}>INVENTORY</div>
-            <div style={{ fontSize:12, color:"#444", marginBottom:20 }}>{products.length} products · live</div>
+            <div style={{ fontSize:12, color:"#444", marginBottom:20 }}>{products.length} products · {products.reduce((sum, p) => sum + (p.stock_by_size ? Object.values(p.stock_by_size).reduce((a,b)=>a+b,0) : (p.stock||0)), 0)} pcs total · live</div>
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
               {products.map(p => {
                 const sbs = p.stock_by_size || {};
@@ -774,7 +776,7 @@ function AdminDashboard({ onLogout }) {
                     </div>
                     <div style={{ textAlign:"right" }}>
                       <div style={{ fontSize:15, fontWeight:600, color: totalStock <= 5 ? "#ff3c64" : "#fff" }}>{totalStock}</div>
-                      <div style={{ fontSize:9, color:"#444" }}>total</div>
+                      <div style={{ fontSize:9, color:"#444" }}>pcs</div>
                     </div>
                     <div style={{ textAlign:"right" }}><div style={{ fontSize:14, fontWeight:600, color:"#a06aff" }}>{fmt(p.price)}</div><div style={{ fontSize:9, color:"#444" }}>{fmt(p.mrp)} MRP</div></div>
                     <button onClick={()=>setEditingProduct({...p, images: p.images?.length ? p.images : [p.image], sizes: (p.sizes && p.sizes.length) ? p.sizes : (p.size ? [p.size] : []), stock_by_size: p.stock_by_size || {}})} style={{ padding:"5px 12px", background:"rgba(160,106,255,.14)", border:"1px solid rgba(160,106,255,.3)", borderRadius:8, color:"#c084fc", fontSize:11, fontWeight:600, cursor:"pointer" }}>Edit</button>
@@ -961,13 +963,21 @@ function AdminDashboard({ onLogout }) {
                   </div>
                   <div><label className="form-label">Amount (₹)</label><input className="form-field" type="number" placeholder="5000" value={newExpense.amount} onChange={e=>setNewExpense(x=>({...x,amount:e.target.value}))} /></div>
                   {newExpense.category === "Inventory Purchase" && (
+                    <div><label className="form-label">Quantity (pcs)</label><input className="form-field" type="number" placeholder="20" min="1" value={newExpense.quantity} onChange={e=>setNewExpense(x=>({...x,quantity:e.target.value}))} /></div>
+                  )}
+                  {newExpense.category === "Inventory Purchase" && (
                     <div><label className="form-label">Shipping (₹)</label><input className="form-field" type="number" placeholder="150" value={newExpense.shipping} onChange={e=>setNewExpense(x=>({...x,shipping:e.target.value}))} /></div>
                   )}
                   <div><label className="form-label">Date</label><input className="form-field" type="date" value={newExpense.expense_date} onChange={e=>setNewExpense(x=>({...x,expense_date:e.target.value}))} /></div>
                   <div><label className="form-label">Description</label><input className="form-field" type="text" placeholder="Bought T-shirts from supplier" value={newExpense.description} onChange={e=>setNewExpense(x=>({...x,description:e.target.value}))} /></div>
                 </div>
-                {newExpense.category === "Inventory Purchase" && (+newExpense.shipping || 0) > 0 && (
-                  <div style={{ fontSize:11, color:"#888", marginBottom:10 }}>Total: {fmt((+newExpense.amount||0) + (+newExpense.shipping||0))} (Item: {fmt(+newExpense.amount||0)} + Shipping: {fmt(+newExpense.shipping||0)})</div>
+                {newExpense.category === "Inventory Purchase" && ((+newExpense.shipping || 0) > 0 || (+newExpense.quantity || 0) > 0) && (
+                  <div style={{ fontSize:11, color:"#888", marginBottom:10 }}>
+                    {(+newExpense.shipping || 0) > 0 && <div>Total: {fmt((+newExpense.amount||0) + (+newExpense.shipping||0))} (Item: {fmt(+newExpense.amount||0)} + Shipping: {fmt(+newExpense.shipping||0)})</div>}
+                    {(+newExpense.quantity || 0) > 0 && (+newExpense.amount || 0) > 0 && (
+                      <div style={{ color:"#a06aff", marginTop:3 }}>Cost per pc: {fmt(((+newExpense.amount||0) + (+newExpense.shipping||0)) / (+newExpense.quantity))}</div>
+                    )}
+                  </div>
                 )}
                 <div style={{ display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
                   <button type="submit" className="submit-btn">Add Expense →</button>
@@ -1004,7 +1014,7 @@ function AdminDashboard({ onLogout }) {
                 <div key={e.id} style={{ display:"grid", gridTemplateColumns:"1fr auto auto", gap:12, alignItems:"center", padding:"12px 16px", background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.06)", borderRadius:12 }}>
                   <div>
                     <div style={{ fontSize:13, fontWeight:500, color:"#fff" }}>{e.description || e.category}</div>
-                    <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{e.category} · {e.expense_date}</div>
+                    <div style={{ fontSize:10, color:"#555", marginTop:2 }}>{e.category} · {e.expense_date}{e.quantity ? ` · ${e.quantity} pcs · ${fmt(e.amount / e.quantity)}/pc` : ""}</div>
                   </div>
                   <div style={{ fontFamily:"Bebas Neue", fontSize:18, color:"#ff3c64" }}>{fmt(e.amount)}</div>
                   <button onClick={()=>setConfirmDelete({type:"expense",id:e.id,label:e.description||e.category})} style={{ padding:"4px 8px", background:"rgba(255,60,100,.1)", border:"1px solid rgba(255,60,100,.2)", borderRadius:6, color:"#ff3c64", fontSize:10, cursor:"pointer" }}>✕</button>
