@@ -485,6 +485,7 @@ function AdminDashboard({ onLogout }) {
                 { label:"Items Sold Today", value:todayItems, color:"#ff3c64" },
                 { label:"Total Revenue", value:fmt(totalRevenue), color:"#00d496" },
                 { label:"Total Sales", value:sales.length, color:"#ffb400" },
+                { label:"Total Pcs in Stock", value:products.reduce((sum, p) => sum + (p.stock_by_size ? Object.values(p.stock_by_size).reduce((a,b)=>a+b,0) : (p.stock||0)), 0), color:"#38bdf8" },
               ].map(k => (
                 <div key={k.label} className="kpi-card">
                   <div style={{ fontSize:10, color:"#444", textTransform:"uppercase", letterSpacing:".1em", marginBottom:7 }}>{k.label}</div>
@@ -544,7 +545,7 @@ function AdminDashboard({ onLogout }) {
                               <div style={{ fontSize:10, color:"#555", marginBottom:4 }}>{p.type} · {(p.sizes||[]).join("/")}</div>
                               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                                 <div style={{ fontSize:14, fontWeight:700, color:"#a06aff" }}>{fmt(p.price)}</div>
-                                <div style={{ fontSize:10, color: totalStock <= 3 ? "#ff3c64" : "#555" }}>{totalStock} left</div>
+                                <div style={{ fontSize:10, color: totalStock <= 3 ? "#ff3c64" : "#555" }}>{totalStock} pcs</div>
                               </div>
                             </div>
                           </div>
@@ -748,7 +749,7 @@ function AdminDashboard({ onLogout }) {
         {adminTab==="inventory" && (
           <div className="fu">
             <div style={{ fontFamily:"Bebas Neue", fontSize:26, color:"#fff", marginBottom:6 }}>INVENTORY</div>
-            <div style={{ fontSize:12, color:"#444", marginBottom:20 }}>{products.length} products · live</div>
+            <div style={{ fontSize:12, color:"#444", marginBottom:20 }}>{products.length} products · {products.reduce((sum, p) => sum + (p.stock_by_size ? Object.values(p.stock_by_size).reduce((a,b)=>a+b,0) : (p.stock||0)), 0)} pcs total · live</div>
             <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
               {products.map(p => {
                 const sbs = p.stock_by_size || {};
@@ -774,7 +775,7 @@ function AdminDashboard({ onLogout }) {
                     </div>
                     <div style={{ textAlign:"right" }}>
                       <div style={{ fontSize:15, fontWeight:600, color: totalStock <= 5 ? "#ff3c64" : "#fff" }}>{totalStock}</div>
-                      <div style={{ fontSize:9, color:"#444" }}>total</div>
+                      <div style={{ fontSize:9, color:"#444" }}>pcs</div>
                     </div>
                     <div style={{ textAlign:"right" }}><div style={{ fontSize:14, fontWeight:600, color:"#a06aff" }}>{fmt(p.price)}</div><div style={{ fontSize:9, color:"#444" }}>{fmt(p.mrp)} MRP</div></div>
                     <button onClick={()=>setEditingProduct({...p, images: p.images?.length ? p.images : [p.image], sizes: (p.sizes && p.sizes.length) ? p.sizes : (p.size ? [p.size] : []), stock_by_size: p.stock_by_size || {}})} style={{ padding:"5px 12px", background:"rgba(160,106,255,.14)", border:"1px solid rgba(160,106,255,.3)", borderRadius:8, color:"#c084fc", fontSize:11, fontWeight:600, cursor:"pointer" }}>Edit</button>
